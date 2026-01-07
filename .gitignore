@@ -1,13 +1,10 @@
 node_modules
 dist
 *.log
-*.db
-*.db-shm
-*.db-wal
 .DS_Store
 .env
 
-# Large media files (store in cloud/docs)
+# Large media files (store in cloud/docs for hackathon submission)
 *.mp4
 *.mov
 *.avi
@@ -15,12 +12,11 @@ dist
 *.zip
 *.tar.gz
 
-# Large images (use optimized versions)
+# Large images (use optimized versions or external hosting)
 *.png
 *.jpg
 *.jpeg
 *.gif
-*.svg
 !apps/web/public/**/*.png
 !apps/web/public/**/*.jpg
 !apps/web/public/**/*.svg
