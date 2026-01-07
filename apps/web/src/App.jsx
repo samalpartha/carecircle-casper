@@ -1,14 +1,22 @@
 import React, { useState, useEffect, useCallback } from "react";
+import AnimatedLogo from "./components/AnimatedLogo.jsx";
 import {
   connectWallet,
+  connectWithPublicKey,
+  CASPER_WALLET_NOT_DETECTED,
   disconnectWallet,
   createCircleOnChain,
   addMemberOnChain,
   createTaskOnChain,
   completeTaskOnChain,
+  transferCSPR,
   getExplorerUrl,
   formatAddress,
-  isDemoMode
+  isDemoMode,
+  getCircleFromChain,
+  getAccountBalance,
+  isAccountLive,
+  checkAndUpdateAccountStatus
 } from "./lib/casper.js";
 import {
   upsertCircle,
@@ -17,7 +25,11 @@ import {
   fetchCircle,
   fetchMembers,
   upsertMember,
-  fetchCircleStats
+  fetchCircleStats,
+  fetchCirclesByWalletKey,
+  sendMemberInvitation,
+  getInvitationByToken,
+  acceptInvitation
 } from "./lib/api.js";
 
 // ==================== Toast Component ====================
@@ -41,12 +53,13 @@ function Toast({ toasts, removeToast }) {
 }
 
 // ==================== Modal Component ====================
-function Modal({ isOpen, onClose, title, children, wide }) {
+function Modal({ isOpen, onClose, title, children, wide, size }) {
   if (!isOpen) return null;
 
+  const sizeClass = size ? `modal-${size}` : "";
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className={`modal ${wide ? 'modal-wide' : ''}`} onClick={(e) => e.stopPropagation()}>
+      <div className={`modal ${wide ? "modal-wide" : ""} ${sizeClass}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3 className="modal-title">{title}</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -57,78 +70,98 @@ function Modal({ isOpen, onClose, title, children, wide }) {
   );
 }
 
-// ==================== Help Modal Component ====================
-function HelpModal({ isOpen, onClose, activeTab, setActiveTab }) {
-  if (!isOpen) return null;
+const HELP_TABS = [
+  { id: "get-started", label: "🚀 Get Started", icon: "🚀" },
+  { id: "user-flows", label: "📖 User Flows", icon: "📖" },
+  { id: "shortcuts", label: "⌨️ Shortcuts", icon: "⌨️" },
+  { id: "faq", label: "❓ FAQ", icon: "❓" }
+];
 
-  const tabs = [
-    { id: 'getting-started', label: '🚀 Getting Started', icon: '🚀' },
-    { id: 'user-flows', label: '📖 User Flows', icon: '📖' },
-    { id: 'shortcuts', label: '⌨️ Shortcuts', icon: '⌨️' },
-    { id: 'faq', label: '❓ FAQ', icon: '❓' }
-  ];
-
+function HelpPanel({ activeTab, setActiveTab, maxHeight }) {
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="CareCircle Help" wide>
       <div className="help-modal-body">
         <div className="help-tabs">
-          {tabs.map(tab => (
+        {HELP_TABS.map((tab) => (
             <button
               key={tab.id}
-              className={`help-tab ${activeTab === tab.id ? 'active' : ''}`}
+            className={`help-tab ${activeTab === tab.id ? "active" : ""}`}
               onClick={() => setActiveTab(tab.id)}
             >
               <span className="help-tab-icon">{tab.icon}</span>
-              <span className="help-tab-label">{tab.label.replace(/^[^ ]+ /, '')}</span>
+            <span className="help-tab-label">{tab.label.replace(/^[^ ]+ /, "")}</span>
             </button>
           ))}
         </div>
 
-        <div className="help-content">
-          {activeTab === 'getting-started' && (
+      <div className="help-content" style={maxHeight ? { maxHeight } : undefined}>
+        {activeTab === "get-started" && (
             <div className="help-section">
-              <h3>Welcome to CareCircle! 💜</h3>
-              <p>
-                CareCircle helps families, caregivers, and volunteers coordinate caregiving tasks
-                with verifiable on-chain completion proofs on the Casper blockchain.
-              </p>
+            <h3>Get Started</h3>
+            <p>
+              Use this page as a quick reference for the key concepts and the basic flow. For step-by-step walkthroughs,
+              switch to <strong>User Flows</strong>.
+            </p>
 
-              <h4>Core Concepts</h4>
-              <ul>
-                <li><strong>Care Circles:</strong> Groups of trusted people coordinating care activities</li>
-                <li><strong>Members:</strong> Caregivers who can be assigned tasks</li>
-                <li><strong>Tasks:</strong> Caregiving activities with priority levels and assignments</li>
-                <li><strong>On-Chain Proofs:</strong> Blockchain records proving task completion</li>
+            <div className="hero-info-grid" style={{ marginTop: 16 }}>
+              <div className="card hero-info-col">
+                <div className="hero-info-title">Core Concepts</div>
+                <div className="hero-info-text">
+                  <ul className="get-started-list">
+                    <li>
+                      <strong>Care Circles</strong> are groups coordinating care activities
+                    </li>
+                    <li>
+                      <strong>Members</strong> are caregivers who can be assigned tasks
+                    </li>
+                    <li>
+                      <strong>Tasks</strong> have priority, assignments, and on-chain status
+                    </li>
+                    <li>
+                      <strong>Proofs</strong> are explorer-verifiable completion transactions
+                    </li>
               </ul>
+                </div>
+              </div>
 
-              <h4>Quick Start</h4>
-              <ol>
-                <li>Connect your Casper wallet (or use Demo Mode)</li>
-                <li>Create a new circle or load an existing one (try ID: 1 for demo)</li>
-                <li>Add members to your circle</li>
-                <li>Create and assign tasks</li>
-                <li>Complete tasks to generate on-chain proofs</li>
+              <div className="card hero-info-col">
+                <div className="hero-info-title">Quick Start</div>
+                <div className="hero-info-text">
+                  <ol className="get-started-list">
+                    <li>Connect your wallet (or use demo mode)</li>
+                    <li>Create a new circle or load an existing one</li>
+                    <li>Add members and assign tasks</li>
+                    <li>Complete tasks to generate proofs</li>
               </ol>
-
-              <div className="help-callout">
-                <strong>💡 First Time Here?</strong>
-                <p>Try loading Circle ID <strong>1</strong> to see a demo circle with sample tasks!</p>
+                  <div className="help-callout" style={{ marginTop: 14 }}>
+                    <strong>🎯 Demo tip</strong>
+                    <p>
+                      Use <strong>Setup CareCircle</strong> → <strong>Load Existing</strong> and enter ID <strong>1</strong>.
+                    </p>
+                  </div>
+                </div>
+              </div>
               </div>
             </div>
           )}
 
-          {activeTab === 'user-flows' && (
+        {activeTab === "user-flows" && (
             <div className="help-section">
               <h3>Step-by-Step Guides</h3>
 
               <div className="help-flow">
                 <h4>🆕 Creating a New Circle</h4>
                 <ol>
-                  <li>Click <strong>"Connect Wallet"</strong> in the top-right corner</li>
+                <li>
+                  Click <strong>"Connect Wallet"</strong> in the top-right corner
+                </li>
                   <li>Approve the connection in your Casper Wallet</li>
-                  <li>Click <strong>"Create New Circle"</strong> on the homepage</li>
+                <li>
+                  Click <strong>"Create New Circle"</strong> on the homepage
+                </li>
                   <li>Enter a name (e.g., "Mom's Care Team")</li>
-                  <li>Click <strong>"Create Circle"</strong></li>
+                <li>
+                  Click <strong>"Create Circle"</strong>
+                </li>
                   <li>Wait for the on-chain transaction to complete</li>
                 </ol>
               </div>
@@ -136,9 +169,13 @@ function HelpModal({ isOpen, onClose, activeTab, setActiveTab }) {
               <div className="help-flow">
                 <h4>📂 Loading an Existing Circle</h4>
                 <ol>
-                  <li>Click <strong>"Load Existing Circle"</strong> on the homepage</li>
+                <li>
+                  Click <strong>"Load Existing Circle"</strong> on the homepage
+                </li>
                   <li>Enter the Circle ID (get this from the circle owner)</li>
-                  <li>Click <strong>"Load Circle"</strong></li>
+                <li>
+                  Click <strong>"Load Circle"</strong>
+                </li>
                   <li>View tasks, members, and stats</li>
                 </ol>
               </div>
@@ -147,9 +184,13 @@ function HelpModal({ isOpen, onClose, activeTab, setActiveTab }) {
                 <h4>👥 Adding Members</h4>
                 <ol>
                   <li>Load your circle (you must be the owner)</li>
-                  <li>Click <strong>"+ Add Member"</strong> in the Circle sidebar</li>
+                <li>
+                  Click <strong>"+ Add Member"</strong> in the Circle sidebar
+                </li>
                   <li>Enter the member's Casper wallet address</li>
-                  <li>Click <strong>"Add Member"</strong></li>
+                <li>
+                  Click <strong>"Add Member"</strong>
+                </li>
                   <li>The member will appear in the Members list</li>
                 </ol>
               </div>
@@ -158,12 +199,16 @@ function HelpModal({ isOpen, onClose, activeTab, setActiveTab }) {
                 <h4>📋 Creating Tasks</h4>
                 <ol>
                   <li>Load your circle</li>
-                  <li>Click <strong>"+ Add Task"</strong></li>
+                <li>
+                  Click <strong>"+ Add Task"</strong>
+                </li>
                   <li>Enter task title (required)</li>
                   <li>Add description (optional)</li>
                   <li>Select priority: Low, Medium, High, or Urgent</li>
                   <li>Enter assignee's address (or leave blank to assign to yourself)</li>
-                  <li>Click <strong>"Create Task"</strong></li>
+                <li>
+                  Click <strong>"Create Task"</strong>
+                </li>
                 </ol>
               </div>
 
@@ -171,7 +216,9 @@ function HelpModal({ isOpen, onClose, activeTab, setActiveTab }) {
                 <h4>✅ Completing Tasks</h4>
                 <ol>
                   <li>Find a task assigned to you (marked "Open")</li>
-                  <li>Click <strong>"✓ Complete Task"</strong></li>
+                <li>
+                  Click <strong>"✓ Complete Task"</strong>
+                </li>
                   <li>Sign the transaction in your Casper Wallet</li>
                   <li>Wait for blockchain confirmation</li>
                   <li>Task will show as "Completed" with an on-chain transaction hash</li>
@@ -190,7 +237,7 @@ function HelpModal({ isOpen, onClose, activeTab, setActiveTab }) {
             </div>
           )}
 
-          {activeTab === 'shortcuts' && (
+        {activeTab === "shortcuts" && (
             <div className="help-section">
               <h3>Keyboard Shortcuts</h3>
               <p>Use these shortcuts to navigate CareCircle faster:</p>
@@ -212,82 +259,102 @@ function HelpModal({ isOpen, onClose, activeTab, setActiveTab }) {
 
               <h4>Tips</h4>
               <ul>
-                <li>Use <kbd>Tab</kbd> to navigate between form fields</li>
-                <li>Press <kbd>Enter</kbd> in any input field to submit the form</li>
+              <li>
+                Use <kbd>Tab</kbd> to navigate between form fields
+              </li>
+              <li>
+                Press <kbd>Enter</kbd> in any input field to submit the form
+              </li>
                 <li>Click outside modals to close them</li>
               </ul>
             </div>
           )}
 
-          {activeTab === 'faq' && (
+        {activeTab === "faq" && (
             <div className="help-section">
               <h3>Frequently Asked Questions</h3>
 
               <div className="faq-item">
                 <h4>What is Demo Mode?</h4>
                 <p>
-                  Demo Mode allows you to explore CareCircle without connecting a Casper wallet.
-                  Blockchain transactions are simulated locally. To use real on-chain features,
-                  connect your Casper Wallet.
+                Demo Mode allows you to explore CareCircle without connecting a Casper wallet. Blockchain transactions
+                are simulated locally. To use real on-chain features, connect your Casper Wallet.
                 </p>
               </div>
 
               <div className="faq-item">
                 <h4>Do I need CSPR tokens?</h4>
                 <p>
-                  Yes, to create circles, add members, and complete tasks on the Casper blockchain,
-                  you need a small amount of CSPR for transaction fees. Use the
-                  <a href="https://testnet.cspr.live/tools/faucet" target="_blank" rel="noopener noreferrer"> Testnet Faucet</a> to get free testnet CSPR.
+                Yes, to create circles, add members, and complete tasks on the Casper blockchain, you need a small
+                amount of CSPR for transaction fees. Use the{" "}
+                <a href="https://testnet.cspr.live/tools/faucet" target="_blank" rel="noopener noreferrer">
+                  Testnet Faucet
+                </a>{" "}
+                to get free testnet CSPR.
                 </p>
               </div>
 
               <div className="faq-item">
                 <h4>Who can complete a task?</h4>
                 <p>
-                  Only the person assigned to a task can mark it as complete. This ensures
-                  accountability and prevents unauthorized task completion.
+                Only the person assigned to a task can mark it as complete. This ensures accountability and prevents
+                unauthorized task completion.
                 </p>
               </div>
 
               <div className="faq-item">
                 <h4>Can I edit or delete tasks?</h4>
                 <p>
-                  Currently, tasks cannot be edited or deleted once created. This preserves the
-                  integrity of the on-chain record. Future versions may add task updates with
-                  version history.
+                Currently, tasks cannot be edited or deleted once created. This preserves the integrity of the on-chain
+                record. Future versions may add task updates with version history.
                 </p>
               </div>
 
               <div className="faq-item">
                 <h4>What happens if I lose my wallet?</h4>
                 <p>
-                  Your wallet controls access to your circles and tasks. Always back up your
-                  wallet's recovery phrase. If you lose access, you won't be able to sign
-                  transactions for your circles.
+                Your wallet controls access to your circles and tasks. Always back up your wallet's recovery phrase. If
+                you lose access, you won't be able to sign transactions for your circles.
                 </p>
               </div>
 
               <div className="faq-item">
                 <h4>Is my data private?</h4>
                 <p>
-                  Circle names, task titles, and member addresses are stored on-chain and are
-                  publicly visible. Only circle members can view detailed task information in
-                  the app. Avoid including sensitive personal information in task titles.
+                Circle names, task titles, and member addresses are stored on-chain and are publicly visible. Only
+                circle members can view detailed task information in the app. Avoid including sensitive personal
+                information in task titles.
                 </p>
               </div>
 
               <div className="faq-item">
                 <h4>How do I get support?</h4>
                 <p>
-                  CareCircle is a hackathon project. For issues or questions, check the
-                  <a href="https://github.com" target="_blank" rel="noopener noreferrer"> GitHub repository</a> or
-                  <a href="https://docs.casper.network" target="_blank" rel="noopener noreferrer"> Casper documentation</a>.
+                CareCircle is a hackathon project. For issues or questions, check the{" "}
+                <a href="https://github.com" target="_blank" rel="noopener noreferrer">
+                  GitHub repository
+                </a>{" "}
+                or{" "}
+                <a href="https://docs.casper.network" target="_blank" rel="noopener noreferrer">
+                  Casper documentation
+                </a>
+                .
                 </p>
               </div>
             </div>
           )}
         </div>
       </div>
+  );
+}
+
+// ==================== Help Modal Component ====================
+function HelpModal({ isOpen, onClose, activeTab, setActiveTab }) {
+  if (!isOpen) return null;
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="CareCircle Help" wide>
+      <HelpPanel activeTab={activeTab} setActiveTab={setActiveTab} />
     </Modal>
   );
 }
@@ -316,17 +383,41 @@ function StatCard({ icon, value, label }) {
 }
 
 // ==================== Task Card ====================
-function TaskCard({ task, onComplete, walletAddr, busy }) {
-  const isAssignee = walletAddr?.toLowerCase() === task.assigned_to?.toLowerCase();
+function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, members = [] }) {
+  const isAssigned = task.assigned_to && task.assigned_to.trim() !== "";
+  const isAssignee = isAssigned && walletAddr?.toLowerCase() === task.assigned_to?.toLowerCase();
   const canComplete = !task.completed && isAssignee;
 
   const priorityLabels = ["Low", "Medium", "High", "Urgent"];
   const priorityColors = ["#71717a", "#eab308", "#f97316", "#ef4444"];
 
+  // Find member by address for display
+  const getMemberName = (address) => {
+    if (!address) return null;
+    const member = members.find(m => m.address?.toLowerCase() === address.toLowerCase());
+    return member?.name || null;
+  };
+
+  const assignedToName = getMemberName(task.assigned_to);
+  const createdByName = getMemberName(task.created_by);
+
   return (
-    <div className={`task-card ${task.completed ? "completed" : ""}`}>
+    <div 
+      className={`task-card ${task.completed ? "completed" : ""}`} 
+      onClick={(e) => {
+        // Don't trigger if clicking on buttons or links
+        if (e.target.tagName === "BUTTON" || e.target.tagName === "A" || e.target.closest("button") || e.target.closest("a")) {
+          return;
+        }
+        onViewDetails && onViewDetails(task);
+      }} 
+      style={{ cursor: "pointer" }}
+    >
       <div className="task-header">
+        <div style={{ display: "flex", gap: "12px", alignItems: "center", flex: 1 }}>
         <span className="task-id">#{task.id}</span>
+          <h4 className="task-title" style={{ margin: 0, flex: 1 }}>{task.title}</h4>
+        </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           {task.priority !== undefined && (
             <span
@@ -346,20 +437,48 @@ function TaskCard({ task, onComplete, walletAddr, busy }) {
           </span>
         </div>
       </div>
-
-      <h4 className="task-title">{task.title}</h4>
       {task.description && (
         <p className="text-sm text-muted mb-4">{task.description}</p>
+      )}
+      {task.payment_amount && (
+        <div style={{ 
+          marginBottom: "12px", 
+          padding: "8px 12px", 
+          background: "rgba(34, 197, 94, 0.1)", 
+          borderRadius: "6px",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "6px"
+        }}>
+          <span style={{ fontSize: "0.875rem", color: "var(--care-green)", fontWeight: 500 }}>
+            💰 {(parseFloat(task.payment_amount) / 1_000_000_000).toFixed(2)} CSPR
+          </span>
+          {task.completed && (
+            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+              (Paid on completion)
+            </span>
+          )}
+        </div>
       )}
 
       <div className="task-meta">
         <div className="task-meta-item">
           <span className="label">Assigned to:</span>
-          <span className="value">{formatAddress(task.assigned_to)}</span>
+          <span className="value">
+            {task.assigned_to && task.assigned_to.trim() !== "" 
+              ? assignedToName 
+                ? `${assignedToName} (${formatAddress(task.assigned_to)})`
+                : formatAddress(task.assigned_to)
+              : "Unassigned"}
+          </span>
         </div>
         <div className="task-meta-item">
           <span className="label">Created by:</span>
-          <span className="value">{formatAddress(task.created_by)}</span>
+          <span className="value">
+            {createdByName 
+              ? `${createdByName} (${formatAddress(task.created_by)})`
+              : formatAddress(task.created_by)}
+          </span>
         </div>
         {task.completed_at && (
           <div className="task-meta-item">
@@ -369,7 +488,7 @@ function TaskCard({ task, onComplete, walletAddr, busy }) {
         )}
       </div>
 
-      <div className="task-footer">
+      <div className="task-footer" onClick={(e) => e.stopPropagation()}>
         <div className="task-tx">
           {task.tx_hash ? (
             <>
@@ -393,8 +512,11 @@ function TaskCard({ task, onComplete, walletAddr, busy }) {
           </button>
         )}
 
-        {!task.completed && !isAssignee && walletAddr && (
+        {!task.completed && !isAssignee && walletAddr && isAssigned && (
           <span className="text-xs text-muted">Only assignee can complete</span>
+        )}
+        {!task.completed && !isAssigned && (
+          <span className="text-xs text-muted">Task must be assigned before completion</span>
         )}
       </div>
     </div>
@@ -402,18 +524,26 @@ function TaskCard({ task, onComplete, walletAddr, busy }) {
 }
 
 // ==================== Member Item ====================
-function MemberItem({ address, isOwner, isCurrentUser }) {
+function MemberItem({ address, name, isOwner, isCurrentUser }) {
   const colors = ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f97316", "#eab308", "#22c55e", "#14b8a6"];
   const colorIndex = address ? parseInt(address.slice(-2), 16) % colors.length : 0;
+  const displayName = name || formatAddress(address);
 
   return (
     <div className="member-item">
       <div className="member-avatar" style={{ background: colors[colorIndex] }}>
-        {address?.slice(2, 4).toUpperCase()}
+        {name ? name.charAt(0).toUpperCase() : address?.slice(2, 4).toUpperCase()}
       </div>
-      <div className="member-address">
-        {formatAddress(address)}
+      <div className="member-info">
+        <div className="member-name">
+          {name || formatAddress(address)}
         {isCurrentUser && " (you)"}
+        </div>
+        {name && (
+          <div className="member-address" style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "2px" }}>
+            {formatAddress(address)}
+          </div>
+        )}
       </div>
       <span className={`member-role ${isOwner ? "owner" : ""}`}>
         {isOwner ? "Owner" : "Member"}
@@ -428,9 +558,13 @@ export default function App() {
   const [walletAddr, setWalletAddr] = useState(() => {
     return localStorage.getItem("carecircle_wallet") || "";
   });
+  const [walletBalance, setWalletBalance] = useState("0");
+  const [isAccountLive, setIsAccountLive] = useState(false);
   const [circle, setCircle] = useState(null);
   const [circleName, setCircleName] = useState("");
   const [circleIdToLoad, setCircleIdToLoad] = useState("");
+  const [walletKeyToLoad, setWalletKeyToLoad] = useState("");
+  const [loadCircleMode, setLoadCircleMode] = useState("id"); // "id" or "wallet"
   const [tasks, setTasks] = useState([]);
   const [members, setMembers] = useState([]);
   const [stats, setStats] = useState({ total_tasks: 0, completed_tasks: 0, open_tasks: 0, completion_rate: 0 });
@@ -444,17 +578,34 @@ export default function App() {
   const [showLoadCircle, setShowLoadCircle] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
+  const [showCircleCreated, setShowCircleCreated] = useState(false);
+  const [createdCircleId, setCreatedCircleId] = useState(null);
+  const [createdCircleName, setCreatedCircleName] = useState("");
   const [showHelp, setShowHelp] = useState(false);
-  const [helpTab, setHelpTab] = useState("getting-started");
+  const [helpTab, setHelpTab] = useState("get-started");
+  const [showConnectWallet, setShowConnectWallet] = useState(false);
+  const [showTaskDetails, setShowTaskDetails] = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [taskAssignTo, setTaskAssignTo] = useState("");
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profileKey, setProfileKey] = useState("");
+  const [invitationToken, setInvitationToken] = useState("");
+  const [invitationData, setInvitationData] = useState(null);
+  const [joinAddress, setJoinAddress] = useState("");
 
-  // Form states
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskDescription, setNewTaskDescription] = useState("");
-  const [newTaskAssignee, setNewTaskAssignee] = useState("");
-  const [newTaskPriority, setNewTaskPriority] = useState(1);
-  const [newMemberAddr, setNewMemberAddr] = useState("");
+  const [page, setPage] = useState(() => {
+    const raw = (window.location.hash || "").replace("#", "").trim();
+    // Default to "about" when no hash or when hash is "about"
+    if (!raw || raw === "about") return "about";
+    // Allow "get-started" or "home" to work regardless of wallet connection
+    if (raw === "home" || raw === "get-started" || raw === "start") return "home";
+    if (raw === "support" || raw === "help") return raw;
+    if (raw === "my-circle") return "my-circle";
+    return "about";
+  });
 
-  // ==================== Toast Helpers ====================
+  // ==================== Helper Functions ====================
   const addToast = useCallback((title, message, type = "info") => {
     const id = Date.now();
     setToasts((prev) => [...prev, { id, title, message, type }]);
@@ -462,6 +613,104 @@ export default function App() {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 5000);
   }, []);
+
+  const syncPageFromLocation = useCallback(() => {
+    const raw = (window.location.hash || "").replace("#", "").trim();
+    let next = "about"; // Default to "about" when no hash
+    
+    // Check for join invitation token
+    if (raw.startsWith("join")) {
+      const params = new URLSearchParams(raw.split("?")[1] || "");
+      const token = params.get("token");
+      if (token) {
+        setInvitationToken(token);
+        next = "join";
+        setPage(next);
+        // Load invitation data
+        getInvitationByToken(token).then(data => {
+          setInvitationData(data);
+        }).catch(err => {
+          console.error("Failed to load invitation:", err);
+          addToast("Error", "Invalid or expired invitation", "error");
+        });
+        return;
+      }
+    }
+    
+    if (!raw || raw === "about") next = "about";
+    else if (raw === "home" || raw === "get-started" || raw === "start") {
+      // Allow "home" (Get Started) page regardless of wallet connection
+      next = "home";
+    }
+    else if (raw === "support" || raw === "help") next = raw;
+    else if (raw === "my-circle") next = "my-circle";
+    setPage(next);
+  }, [addToast]);
+
+  useEffect(() => {
+    const handler = () => syncPageFromLocation();
+    window.addEventListener("hashchange", handler);
+    window.addEventListener("popstate", handler);
+    handler();
+    return () => {
+      window.removeEventListener("hashchange", handler);
+      window.removeEventListener("popstate", handler);
+    };
+  }, [syncPageFromLocation]);
+
+  const navigateTo = useCallback((nextPage) => {
+    const validPages = ["about", "home", "get-started", "support", "help", "my-circle"];
+    let target = nextPage;
+    if (nextPage === "home" || nextPage === "get-started" || nextPage === "start") {
+      target = "home";
+    } else if (!validPages.includes(nextPage)) {
+      target = "about";
+    }
+    setShowHelp(false);
+    if (target === "about") {
+      window.history.pushState(null, "", window.location.pathname + window.location.search);
+    } else if (target === "home") {
+      window.history.pushState(null, "", `${window.location.pathname}${window.location.search}#get-started`);
+    } else {
+      window.history.pushState(null, "", `${window.location.pathname}${window.location.search}#${target}`);
+    }
+    setPage(target);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [circle]);
+
+  // Form states
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [newTaskAssignee, setNewTaskAssignee] = useState("");
+  const [newTaskPriority, setNewTaskPriority] = useState(1);
+  const [newTaskPayment, setNewTaskPayment] = useState("");
+  const [newMemberAddr, setNewMemberAddr] = useState("");
+  const [newMemberName, setNewMemberName] = useState("");
+  const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [memberInviteMode, setMemberInviteMode] = useState("address"); // "address" or "email"
+  const [demoWalletKey, setDemoWalletKey] = useState("");
+  const [demoWalletError, setDemoWalletError] = useState("");
+
+  // ==================== Helper Functions ====================
+  const parseCircleFromChain = (chainData, circleId) => {
+    // Simplified parser - in production, you'd properly parse CLValue
+    // For now, return a basic structure
+    try {
+      // If chainData is already parsed or has the structure we need
+      if (typeof chainData === 'object' && chainData !== null) {
+        return {
+          id: circleId,
+          name: chainData.name || `Circle ${circleId}`,
+          owner: chainData.owner || "",
+        };
+      }
+      return null;
+    } catch (err) {
+      console.error("Failed to parse circle from chain:", err);
+      return null;
+    }
+  };
+
 
   const removeToast = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -479,6 +728,7 @@ export default function App() {
       setTasks(tasksData);
       setMembers(membersData.map(m => ({
         address: m.address,
+        name: m.name || null,
         isOwner: m.is_owner
       })));
       setStats(statsData);
@@ -495,8 +745,80 @@ export default function App() {
       const addr = await connectWallet();
       setWalletAddr(addr);
       localStorage.setItem("carecircle_wallet", addr);
+      
+      // Always try to fetch balance (returns { balance, isLive })
+      try {
+        const result = await getAccountBalance(addr);
+        if (result && typeof result === 'object') {
+          setWalletBalance(result.balance || "0");
+          setIsAccountLive(result.isLive === true);
+        } else {
+          setWalletBalance(result || "0");
+          setIsAccountLive(false);
+        }
+      } catch (err) {
+        console.error("Failed to fetch balance:", err);
+        setWalletBalance("0");
+        setIsAccountLive(false);
+      }
+      
       addToast("Wallet Connected", formatAddress(addr), "success");
     } catch (err) {
+      if (err?.code === CASPER_WALLET_NOT_DETECTED) {
+        setDemoWalletKey("");
+        setDemoWalletError("");
+        setShowConnectWallet(true);
+      } else {
+      addToast("Connection Failed", err.message, "error");
+      }
+    } finally {
+      setBusy(false);
+      setLoadingMessage("");
+    }
+  };
+
+  const handleLoadDemoKey = () => {
+    // Use a standard demo key format (66 chars: 02 prefix + 64 hex chars)
+    const demoKey = "0202b40ddeb748ccc6f80048bb6e0f2be1969dc528600390224557eb05c0e0f8844d";
+    setDemoWalletKey(demoKey);
+    setDemoWalletError("");
+  };
+
+  const handleConnectDemoWallet = async () => {
+    const key = (demoWalletKey || "").trim();
+    if (!key || key.length < 64) {
+      setDemoWalletError("Please enter a valid Casper public key (hex).");
+      return;
+    }
+
+    try {
+      setDemoWalletError("");
+      setBusy(true);
+      setLoadingMessage("Connecting (demo mode)...");
+      const addr = await connectWallet({ manualPublicKey: key });
+      setWalletAddr(addr);
+      localStorage.setItem("carecircle_wallet", addr);
+      
+      // For manual key entry, try to fetch balance to check if account is live
+      try {
+        const result = await getAccountBalance(addr);
+        if (result && typeof result === 'object') {
+          setWalletBalance(result.balance || "0");
+          setIsAccountLive(result.isLive === true);
+        } else {
+          setWalletBalance("0");
+          setIsAccountLive(false);
+        }
+      } catch (err) {
+        console.error("Failed to fetch balance:", err);
+        setWalletBalance("0");
+        setIsAccountLive(false);
+      }
+      
+      setShowConnectWallet(false);
+      addToast("Wallet Connected", formatAddress(addr), "success");
+    } catch (err) {
+      setDemoWalletError(err?.message || "Failed to connect");
       addToast("Connection Failed", err.message, "error");
     } finally {
       setBusy(false);
@@ -507,6 +829,7 @@ export default function App() {
   const handleDisconnect = async () => {
     await disconnectWallet();
     setWalletAddr("");
+    setWalletBalance("0");
     localStorage.removeItem("carecircle_wallet");
 
     // Reset to base state
@@ -530,12 +853,21 @@ export default function App() {
 
       const result = await createCircleOnChain({ name: circleName });
 
-      await upsertCircle({
+      // Save to database with error handling
+      try {
+        const upsertResult = await upsertCircle({
         id: result.id,
         name: circleName,
         owner: walletAddr,
+          wallet_key: walletAddr,
         tx_hash: result.txHash
       });
+        console.log("Circle saved to database:", upsertResult);
+      } catch (dbError) {
+        console.error("Failed to save circle to database:", dbError);
+        // Continue anyway - circle is created on-chain
+        addToast("Warning", "Circle created but database save failed. Circle ID: " + result.id, "warning");
+      }
 
       // Add owner as member
       await upsertMember({
@@ -553,8 +885,16 @@ export default function App() {
 
       localStorage.setItem("carecircle_circle_id", result.id.toString());
 
+      // Navigate to My Circle page
+      navigateTo("my-circle");
+
       setShowCreateCircle(false);
       setCircleName("");
+
+      // Show confirmation modal with circle ID
+      setCreatedCircleId(result.id);
+      setCreatedCircleName(circleName);
+      setShowCircleCreated(true);
 
       addToast("Circle Created!", `${circleName} (ID: ${result.id})`, "success");
 
@@ -568,6 +908,7 @@ export default function App() {
   };
 
   const handleLoadCircle = async () => {
+    if (loadCircleMode === "id") {
     const id = parseInt(circleIdToLoad, 10);
     if (!id || isNaN(id)) return addToast("Error", "Enter a valid circle ID", "error");
 
@@ -591,8 +932,24 @@ export default function App() {
 
       localStorage.setItem("carecircle_circle_id", id.toString());
 
+      // Auto-connect wallet if not already connected
+      if (!walletAddr && circleData.owner) {
+        try {
+          const addr = connectWithPublicKey(circleData.owner);
+          setWalletAddr(addr);
+          localStorage.setItem("carecircle_wallet", addr);
+          addToast("Wallet Auto-Connected", formatAddress(addr), "success");
+        } catch (err) {
+          console.error("Failed to auto-connect wallet:", err);
+          // Continue anyway - circle is loaded
+        }
+      }
+
       setShowLoadCircle(false);
       setCircleIdToLoad("");
+
+      // Navigate to My Circle page
+      navigateTo("my-circle");
 
       addToast("Circle Loaded!", circleData.name, "success");
 
@@ -603,6 +960,68 @@ export default function App() {
       setBusy(false);
       setLoadingMessage("");
     }
+  } else {
+    // Load by wallet key
+    const walletKey = (walletKeyToLoad || "").trim();
+    if (!walletKey || walletKey.length < 64) {
+      return addToast("Error", "Enter a valid wallet key", "error");
+    }
+
+    try {
+      setBusy(true);
+      setLoadingMessage("Loading circles by wallet key...");
+
+      const circles = await fetchCirclesByWalletKey(walletKey);
+
+      if (!circles || circles.length === 0) {
+        addToast("Not Found", `No circles found for wallet key`, "error");
+        return;
+      }
+
+      // If multiple circles, use the first one (most recent)
+      const circleData = circles[0];
+      setCircle({
+        id: circleData.id,
+        name: circleData.name,
+        owner: circleData.owner,
+        txHash: circleData.tx_hash
+      });
+
+      localStorage.setItem("carecircle_circle_id", circleData.id.toString());
+
+      // Auto-connect wallet if not already connected
+      if (!walletAddr && circleData.owner) {
+        try {
+          const addr = connectWithPublicKey(circleData.owner);
+          setWalletAddr(addr);
+          localStorage.setItem("carecircle_wallet", addr);
+          addToast("Wallet Auto-Connected", formatAddress(addr), "success");
+        } catch (err) {
+          console.error("Failed to auto-connect wallet:", err);
+          // Continue anyway - circle is loaded
+        }
+      }
+
+      setShowLoadCircle(false);
+      setWalletKeyToLoad("");
+
+      // Navigate to My Circle page
+      navigateTo("my-circle");
+
+      if (circles.length > 1) {
+        addToast("Circle Loaded!", `${circleData.name} (${circles.length} circles found, showing most recent)`, "success");
+      } else {
+        addToast("Circle Loaded!", circleData.name, "success");
+      }
+
+      await refreshCircleData(circleData.id);
+    } catch (err) {
+      addToast("Failed to Load Circle", err.message, "error");
+    } finally {
+      setBusy(false);
+      setLoadingMessage("");
+    }
+    }
   };
 
   const handleLeaveCircle = () => {
@@ -611,13 +1030,58 @@ export default function App() {
     setMembers([]);
     setStats({ total_tasks: 0, completed_tasks: 0, open_tasks: 0, completion_rate: 0 });
     localStorage.removeItem("carecircle_circle_id");
-    addToast("Left Circle", null, "info");
+    
+    // Navigate to Get Started page
+    navigateTo("home");
+    
+    addToast("Left Circle", "Returned to Get Started", "info");
+  };
+
+  // ==================== Profile Actions ====================
+  const handleEditProfile = () => {
+    // Find current user's member info
+    const currentMember = members.find(m => m.address?.toLowerCase() === walletAddr?.toLowerCase());
+    setProfileName(currentMember?.name || "");
+    setProfileKey(walletAddr || "");
+    setShowEditProfile(true);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!circle) return addToast("Error", "No circle loaded", "error");
+    if (!walletAddr) return addToast("Error", "Connect wallet first", "error");
+    if (!profileName.trim()) return addToast("Error", "Name is required", "error");
+
+    try {
+      setBusy(true);
+      setLoadingMessage("Updating profile...");
+
+      // Update member name in database
+      await upsertMember({
+        circle_id: circle.id,
+        address: walletAddr,
+        name: profileName.trim(),
+        is_owner: walletAddr.toLowerCase() === circle.owner?.toLowerCase()
+      });
+
+      setShowEditProfile(false);
+      setProfileName("");
+      setProfileKey("");
+
+      addToast("Profile Updated!", "Your name has been updated", "success");
+      await refreshCircleData(circle.id);
+    } catch (err) {
+      addToast("Failed to Update Profile", err.message, "error");
+    } finally {
+      setBusy(false);
+      setLoadingMessage("");
+    }
   };
 
   // ==================== Member Actions ====================
   const handleAddMember = async () => {
     if (!circle) return addToast("Error", "No circle loaded", "error");
     if (!newMemberAddr.trim()) return addToast("Error", "Member address is required", "error");
+    if (!newMemberName.trim()) return addToast("Error", "Member name is required", "error");
 
     try {
       setBusy(true);
@@ -631,17 +1095,122 @@ export default function App() {
       await upsertMember({
         circle_id: circle.id,
         address: newMemberAddr.trim(),
+        name: newMemberName.trim(),
         is_owner: false,
         tx_hash: result.txHash
       });
 
       setShowAddMember(false);
       setNewMemberAddr("");
+      setNewMemberName("");
 
-      addToast("Member Added!", formatAddress(newMemberAddr), "success");
+      addToast("Member Added!", `${newMemberName} (${formatAddress(newMemberAddr)})`, "success");
       await refreshCircleData(circle.id);
     } catch (err) {
       addToast("Failed to Add Member", err.message, "error");
+    } finally {
+      setBusy(false);
+      setLoadingMessage("");
+    }
+  };
+
+  const handleInviteByEmail = async () => {
+    if (!circle) return addToast("Error", "No circle loaded", "error");
+    if (!newMemberEmail.trim()) return addToast("Error", "Email address is required", "error");
+    if (!newMemberName.trim()) return addToast("Error", "Member name is required", "error");
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newMemberEmail.trim())) {
+      return addToast("Error", "Please enter a valid email address", "error");
+    }
+
+    try {
+      setBusy(true);
+      setLoadingMessage("Sending invitation email...");
+
+      const result = await sendMemberInvitation({
+        circle_id: circle.id,
+        circle_name: circle.name,
+        member_name: newMemberName.trim(),
+        email: newMemberEmail.trim(),
+        inviter_name: members.find(m => m.address?.toLowerCase() === walletAddr?.toLowerCase())?.name || "Circle Owner"
+      });
+
+      setShowAddMember(false);
+      setNewMemberAddr("");
+      setNewMemberName("");
+      setNewMemberEmail("");
+      setMemberInviteMode("address");
+
+      if (result.joinUrl) {
+        addToast("Invitation Sent!", `Invitation sent to ${newMemberEmail}. Join link: ${result.joinUrl}`, "success");
+      } else {
+        addToast("Invitation Sent!", `Invitation sent to ${newMemberEmail}`, "success");
+      }
+    } catch (err) {
+      addToast("Failed to Send Invitation", err.message, "error");
+    } finally {
+      setBusy(false);
+      setLoadingMessage("");
+    }
+  };
+
+  const handleAcceptInvitation = async () => {
+    if (!invitationToken) return addToast("Error", "No invitation token", "error");
+    
+    const address = (joinAddress.trim() || walletAddr || "").trim();
+    if (!address || address.length < 64) {
+      return addToast("Error", "Please enter a valid Casper address or connect your wallet", "error");
+    }
+
+    try {
+      setBusy(true);
+      setLoadingMessage("Accepting invitation...");
+
+      const result = await acceptInvitation(invitationToken, { address });
+
+      // Add member on-chain if wallet is connected
+      if (walletAddr && walletAddr.toLowerCase() === address.toLowerCase()) {
+        try {
+          await addMemberOnChain({
+            circleId: result.circle_id,
+            memberAddress: address
+          });
+        } catch (chainErr) {
+          console.warn("Failed to add member on-chain:", chainErr);
+          // Continue anyway - member is added to database
+        }
+      }
+
+      // Load the circle
+      const circleData = await fetchCircle(result.circle_id);
+      if (circleData) {
+        setCircle({
+          id: circleData.id,
+          name: circleData.name,
+          owner: circleData.owner,
+          txHash: circleData.tx_hash
+        });
+        localStorage.setItem("carecircle_circle_id", result.circle_id.toString());
+        
+        // Auto-connect wallet if not already connected
+        if (!walletAddr && address) {
+          try {
+            connectWithPublicKey(address);
+            setWalletAddr(address);
+            localStorage.setItem("carecircle_wallet", address);
+          } catch (err) {
+            console.error("Failed to auto-connect wallet:", err);
+          }
+        }
+
+        await refreshCircleData(result.circle_id);
+        navigateTo("my-circle");
+        addToast("Welcome!", `You've joined ${result.circle_name}`, "success");
+      }
+    } catch (err) {
+      addToast("Failed to Accept Invitation", err.message, "error");
     } finally {
       setBusy(false);
       setLoadingMessage("");
@@ -653,7 +1222,11 @@ export default function App() {
     if (!circle) return addToast("Error", "No circle loaded", "error");
     if (!newTaskTitle.trim()) return addToast("Error", "Task title is required", "error");
 
-    const assignee = newTaskAssignee.trim() || walletAddr;
+    const assignee = newTaskAssignee.trim() || null;
+
+    // On-chain creation requires an assignee (contract requirement)
+    // If not assigned, we'll use creator as placeholder for on-chain, but store as null in DB
+    const chainAssignee = assignee || walletAddr;
 
     try {
       setBusy(true);
@@ -662,17 +1235,22 @@ export default function App() {
       const result = await createTaskOnChain({
         circleId: circle.id,
         title: newTaskTitle,
-        assignedTo: assignee
+        assignedTo: chainAssignee
       });
+
+      // Parse payment amount (convert CSPR to motes: 1 CSPR = 1,000,000,000 motes)
+      const paymentAmount = newTaskPayment.trim() ? 
+        (parseFloat(newTaskPayment.trim()) * 1_000_000_000).toString() : null;
 
       await upsertTask({
         id: result.id,
         circle_id: circle.id,
         title: newTaskTitle,
         description: newTaskDescription || null,
-        assigned_to: assignee,
+        assigned_to: assignee, // null if not assigned (will show as "Unassigned" in UI)
         created_by: walletAddr,
         priority: newTaskPriority,
+        payment_amount: paymentAmount,
         completed: false,
         tx_hash: result.txHash
       });
@@ -682,6 +1260,7 @@ export default function App() {
       setNewTaskDescription("");
       setNewTaskAssignee("");
       setNewTaskPriority(1);
+      setNewTaskPayment("");
 
       addToast("Task Created!", newTaskTitle, "success");
       await refreshCircleData(circle.id);
@@ -693,8 +1272,96 @@ export default function App() {
     }
   };
 
+  const handleAssignTask = async () => {
+    if (!selectedTask) return;
+    if (!circle) return addToast("Error", "No circle loaded", "error");
+    
+    const assignee = taskAssignTo.trim() || null;
+
+    try {
+      setBusy(true);
+      setLoadingMessage("Updating task assignment...");
+
+      // For on-chain update, we need an assignee. If not assigned, use creator as placeholder
+      const chainAssignee = assignee || walletAddr;
+
+      // Update task assignment on-chain (if supported) or just in database
+      await upsertTask({
+        id: selectedTask.id,
+        circle_id: circle.id,
+        title: selectedTask.title,
+        description: selectedTask.description || null,
+        assigned_to: assignee,
+        created_by: selectedTask.created_by,
+        priority: selectedTask.priority,
+        completed: selectedTask.completed,
+        tx_hash: selectedTask.tx_hash
+      });
+
+      setShowTaskDetails(false);
+      setSelectedTask(null);
+      setTaskAssignTo("");
+
+      addToast("Task Updated!", "Assignment updated", "success");
+      await refreshCircleData(circle.id);
+    } catch (err) {
+      addToast("Failed to Update Task", err.message, "error");
+    } finally {
+      setBusy(false);
+      setLoadingMessage("");
+    }
+  };
+
+  const handleCancelTask = async () => {
+    if (!selectedTask) return;
+    if (!circle) return addToast("Error", "No circle loaded", "error");
+    if (!walletAddr) return addToast("Error", "Connect wallet first", "error");
+
+    // Only creator or owner can cancel
+    const isCreator = walletAddr.toLowerCase() === selectedTask.created_by?.toLowerCase();
+    const isOwner = walletAddr.toLowerCase() === circle.owner?.toLowerCase();
+    
+    if (!isCreator && !isOwner) {
+      return addToast("Error", "Only the task creator or circle owner can cancel tasks", "error");
+    }
+
+    try {
+      setBusy(true);
+      setLoadingMessage("Canceling task...");
+
+      // Mark task as completed with a special status or delete it
+      // For now, we'll mark it as completed with a note
+      await upsertTask({
+        id: selectedTask.id,
+        circle_id: circle.id,
+        title: selectedTask.title,
+        description: selectedTask.description || null,
+        assigned_to: selectedTask.assigned_to,
+        created_by: selectedTask.created_by,
+        priority: selectedTask.priority,
+        completed: true, // Mark as completed (canceled)
+        tx_hash: selectedTask.tx_hash
+      });
+
+      setShowTaskDetails(false);
+      setSelectedTask(null);
+      setTaskAssignTo("");
+
+      addToast("Task Canceled!", selectedTask.title, "success");
+      await refreshCircleData(circle.id);
+    } catch (err) {
+      addToast("Failed to Cancel Task", err.message, "error");
+    } finally {
+      setBusy(false);
+      setLoadingMessage("");
+    }
+  };
+
   const handleCompleteTask = async (task) => {
     if (!walletAddr) return addToast("Error", "Connect wallet first", "error");
+    if (!task.assigned_to || task.assigned_to.trim() === "") {
+      return addToast("Error", "Task must be assigned before completion", "error");
+    }
     if (walletAddr.toLowerCase() !== task.assigned_to.toLowerCase()) {
       return addToast("Error", "Only the assignee can complete this task", "error");
     }
@@ -704,6 +1371,32 @@ export default function App() {
       setLoadingMessage("Signing task completion...");
 
       const result = await completeTaskOnChain({ taskId: task.id });
+
+      // Transfer payment if task has payment amount
+      // Payment should be transferred by the circle owner to the assignee
+      let paymentMsg = "";
+      if (task.payment_amount) {
+        const paymentCSPR = (parseFloat(task.payment_amount) / 1_000_000_000).toFixed(2);
+        if (circle.owner && circle.owner.toLowerCase() === walletAddr.toLowerCase()) {
+          // Current user is the owner - attempt to transfer payment
+          try {
+            setLoadingMessage("Transferring payment...");
+            const paymentResult = await transferCSPR({
+              recipientAddress: task.assigned_to,
+              amountMotes: task.payment_amount
+            });
+            paymentMsg = ` Payment: ${formatAddress(paymentResult.txHash, 10, 8)} (${paymentCSPR} CSPR)`;
+            console.log(`✅ Payment transferred: ${paymentResult.txHash}`);
+          } catch (paymentErr) {
+            console.error("Payment transfer failed:", paymentErr);
+            paymentMsg = ` Payment: ${paymentCSPR} CSPR (transfer failed - owner must transfer manually)`;
+            addToast("Warning", "Task completed but payment transfer failed. Owner must transfer manually.", "warning");
+          }
+        } else {
+          // Assignee completed - payment will be transferred by owner
+          paymentMsg = ` Payment: ${paymentCSPR} CSPR (will be transferred by owner)`;
+        }
+      }
 
       await upsertTask({
         ...task,
@@ -715,7 +1408,7 @@ export default function App() {
 
       addToast(
         "Task Completed!",
-        `On-chain proof: ${formatAddress(result.txHash, 10, 8)}`,
+        `On-chain proof: ${formatAddress(result.txHash, 10, 8)}${paymentMsg}`,
         "success"
       );
 
@@ -748,6 +1441,78 @@ export default function App() {
 
   // ==================== Effects ====================
 
+  // Sync wallet connection state on mount
+  useEffect(() => {
+    const savedWallet = localStorage.getItem("carecircle_wallet");
+    if (savedWallet && savedWallet.trim()) {
+      // Restore connection state in casper module
+      try {
+        // Check if we can detect if this was an extension connection
+        // For now, we'll assume manual key entry on restore (will be updated on next real connection)
+        connectWithPublicKey(savedWallet);
+        console.log("Restored wallet connection from localStorage");
+        
+        // Always try to fetch balance - returns { balance, isLive }
+        getAccountBalance(savedWallet).then(result => {
+          if (result && typeof result === 'object') {
+            setWalletBalance(result.balance || "0");
+            setIsAccountLive(result.isLive === true);
+          } else {
+            setWalletBalance(result || "0");
+            setIsAccountLive(false);
+          }
+        }).catch(err => {
+          console.error("Failed to fetch balance on restore:", err);
+          setWalletBalance("0");
+          setIsAccountLive(false);
+        });
+      } catch (err) {
+        console.error("Failed to restore wallet connection:", err);
+        // Clear invalid wallet from localStorage
+        localStorage.removeItem("carecircle_wallet");
+        setWalletAddr("");
+        setWalletBalance("0");
+      }
+    }
+  }, []);
+
+  // Fetch balance when wallet address changes and check if account is live
+  useEffect(() => {
+    if (walletAddr) {
+      // Check if account is live on blockchain (for manual key entries)
+      // This will update isWalletExtensionConnected if account is found
+      checkAndUpdateAccountStatus(walletAddr).then(isLive => {
+        if (isLive) {
+          console.log("Account verified as live on blockchain");
+        }
+      }).catch(err => {
+        console.warn("Failed to check if account is live:", err);
+      });
+      
+      // Always try to fetch balance - returns { balance, isLive }
+      // Works with or without extension - uses backend proxy
+      getAccountBalance(walletAddr).then(result => {
+        if (result && typeof result === 'object' && result.balance !== undefined) {
+          const balance = String(result.balance || "0");
+          const isLive = result.isLive === true;
+          setWalletBalance(balance);
+          setIsAccountLive(isLive);
+          // Note: isWalletExtensionConnected is updated inside getAccountBalance function
+        } else {
+          // Fallback for old format (string)
+          setWalletBalance(result || "0");
+          setIsAccountLive(false);
+        }
+      }).catch(err => {
+        console.error("Failed to fetch balance:", err);
+        setWalletBalance("0");
+        setIsAccountLive(false);
+      });
+    } else {
+      setWalletBalance("0");
+    }
+  }, [walletAddr]);
+
   // Load saved circle on mount
   useEffect(() => {
     const savedCircleId = localStorage.getItem("carecircle_circle_id");
@@ -762,6 +1527,20 @@ export default function App() {
               owner: circleData.owner,
               txHash: circleData.tx_hash
             });
+            
+            // Auto-connect wallet if not already connected
+            const currentWallet = walletAddr || localStorage.getItem("carecircle_wallet");
+            if (!currentWallet && circleData.owner) {
+              try {
+                const addr = connectWithPublicKey(circleData.owner);
+                setWalletAddr(addr);
+                localStorage.setItem("carecircle_wallet", addr);
+                console.log("Wallet auto-connected on circle restore:", formatAddress(addr));
+              } catch (err) {
+                console.error("Failed to auto-connect wallet on restore:", err);
+                // Continue anyway - circle is loaded
+              }
+            }
             refreshCircleData(id);
           }
         }).catch(console.error);
@@ -785,15 +1564,6 @@ export default function App() {
       {/* Toast notifications */}
       <Toast toasts={toasts} removeToast={removeToast} />
 
-      {/* Floating Help Button */}
-      <button
-        className="help-button"
-        onClick={() => setShowHelp(true)}
-        title="Help (Press ? for shortcuts)"
-      >
-        ?
-      </button>
-
       {/* Help Modal */}
       <HelpModal
         isOpen={showHelp}
@@ -806,16 +1576,89 @@ export default function App() {
       <header className="header">
         <div className="header-left">
           <div className="logo">
-            <div className="logo-icon">💜</div>
-            <span className="logo-text">CareCircle</span>
+              <div className="logo-icon">
+                <AnimatedLogo />
           </div>
+              <div className="logo-wordmark">
+                <span className="logo-text">CareCircle</span>
           <span className="logo-badge">
             <span>◆</span> CASPER HACKATHON 2026
           </span>
-          <div className="network-indicator">
-            <span className={`network-dot ${isDemoMode() ? "demo" : ""}`}></span>
-            {isDemoMode() ? "Demo Mode" : "Casper Testnet"}
           </div>
+          </div>
+          <nav className="top-tabs" aria-label="Primary navigation">
+            {!circle ? (
+              <>
+                <button
+                  className={`top-tab top-tab-about ${page === "about" ? "active" : ""}`}
+                  onClick={() => navigateTo("about")}
+                  aria-current={page === "about" ? "page" : undefined}
+                >
+                  <span>About</span>
+                  {page === "about" && <span className="tab-caret" aria-hidden="true">▾</span>}
+                </button>
+                <button
+                  className={`top-tab ${page === "home" ? "active" : ""}`}
+                  onClick={() => navigateTo("home")}
+                  aria-current={page === "home" ? "page" : undefined}
+                >
+                  <span>Get Started</span>
+                  {page === "home" && <span className="tab-caret" aria-hidden="true">▾</span>}
+                </button>
+                <button
+                  className={`top-tab ${page === "support" ? "active" : ""}`}
+                  onClick={() => navigateTo("support")}
+                  aria-current={page === "support" ? "page" : undefined}
+                >
+                  <span>Support</span>
+                  {page === "support" && <span className="tab-caret" aria-hidden="true">▾</span>}
+                </button>
+                <button
+                  className={`top-tab top-tab-help ${page === "help" ? "active" : ""}`}
+                  onClick={() => navigateTo("help")}
+                  aria-current={page === "help" ? "page" : undefined}
+                >
+                  <span>Help</span>
+                  {page === "help" && <span className="tab-caret" aria-hidden="true">▾</span>}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className={`top-tab top-tab-about ${page === "about" ? "active" : ""}`}
+                  onClick={() => navigateTo("about")}
+                  aria-current={page === "about" ? "page" : undefined}
+                >
+                  <span>About</span>
+                  {page === "about" && <span className="tab-caret" aria-hidden="true">▾</span>}
+                </button>
+                <button
+                  className={`top-tab ${page === "my-circle" ? "active" : ""}`}
+                  onClick={() => navigateTo("my-circle")}
+                  aria-current={page === "my-circle" ? "page" : undefined}
+                >
+                  <span>My Circle</span>
+                  {page === "my-circle" && <span className="tab-caret" aria-hidden="true">▾</span>}
+                </button>
+                <button
+                  className={`top-tab ${page === "support" ? "active" : ""}`}
+                  onClick={() => navigateTo("support")}
+                  aria-current={page === "support" ? "page" : undefined}
+                >
+                  <span>Support</span>
+                  {page === "support" && <span className="tab-caret" aria-hidden="true">▾</span>}
+                </button>
+                <button
+                  className={`top-tab top-tab-help ${page === "help" ? "active" : ""}`}
+                  onClick={() => navigateTo("help")}
+                  aria-current={page === "help" ? "page" : undefined}
+                >
+                  <span>Help</span>
+                  {page === "help" && <span className="tab-caret" aria-hidden="true">▾</span>}
+                </button>
+              </>
+            )}
+          </nav>
         </div>
 
         <div className="wallet-section">
@@ -824,10 +1667,42 @@ export default function App() {
               <div className="wallet-info">
                 <div className="wallet-label">Connected Wallet</div>
                 <div className="wallet-address">{formatAddress(walletAddr)}</div>
+                {walletAddr && (() => {
+                  // Use actual balance from API if account is live, otherwise show demo value
+                  let balanceStr = "0.00";
+                  if (isAccountLive) {
+                    // Account is live - use actual balance from API
+                    balanceStr = walletBalance && walletBalance !== "0" ? walletBalance : "0.00";
+                  } else {
+                    // Account is not live - show demo value
+                    balanceStr = "1,234.56";
+                  }
+                  const balanceNum = parseFloat(balanceStr.replace(/,/g, "")) || 0;
+                  const balanceColor = balanceNum >= 1 ? "var(--care-green)" : balanceNum > 0 ? "#eab308" : "#ef4444";
+                  return (
+                    <div className="wallet-balance" style={{ marginTop: "4px", fontSize: "0.75rem", color: balanceColor, fontWeight: 500 }}>
+                      {balanceStr} CSPR
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={handleDisconnect}>
+                  );
+                })()}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <button className="btn btn-danger btn-sm" onClick={handleDisconnect}>
                 Disconnect
               </button>
+                {!isAccountLive && (
+                  <div className="network-indicator" style={{ fontSize: "0.75rem", textAlign: "center" }}>
+                    <span className={`network-dot demo`}></span>
+                    Demo Mode
+                  </div>
+                )}
+                {isAccountLive && (
+                  <div className="network-indicator" style={{ fontSize: "0.75rem", textAlign: "center", color: "var(--care-green)" }}>
+                    <span className={`network-dot`} style={{ background: "var(--care-green)" }}></span>
+                    Live Account
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <button className="btn btn-primary" onClick={handleConnect} disabled={busy}>
@@ -837,69 +1712,617 @@ export default function App() {
         </div>
       </header>
 
-      {/* Hero section (when no circle) */}
-      {!circle && (
-        <section className="hero animate-in">
-          <h1 className="hero-title">
-            Caregiving, Verified<br />On-Chain
-          </h1>
-          <p className="hero-subtitle">
-            CareCircle coordinates caregiving tasks for families, elder care, and community volunteers —
-            with verifiable task completion proofs recorded on the Casper blockchain.
-          </p>
+      {/* Pages (when no circle) */}
+      {!circle && page === "home" && (
+        <section className="page animate-in" id="get-started">
+          <div className="get-started">
+            <div className="get-started-panel card page-card">
+              <div className="get-started-body">
+                <div className="get-started-grid">
+                  <div className="card hero-info-col">
+                    <div className="hero-info-title">1) Connect Wallet</div>
+                    <div className="hero-info-text" style={{ marginBottom: 14 }}>
+                      {walletAddr
+                        ? "Wallet connected. You're ready to set up your CareCircle."
+                        : "Connect your Casper Wallet for live signing, or use demo mode with a public key."}
+                    </div>
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                      <button className="btn btn-primary" onClick={handleConnect} disabled={busy || !!walletAddr}>
+                        {walletAddr ? "Connected" : busy ? "Connecting..." : "Connect Wallet"}
+                      </button>
+                    </div>
+                  </div>
 
-          <div className="hero-features">
-            <div className="hero-feature">
-              <div className="hero-feature-icon">👥</div>
-              <span>Create Care Circles</span>
+                  <div className="card hero-info-col">
+                    <div className="hero-info-title">2) Setup CareCircle</div>
+                    <div className="hero-info-text" style={{ marginBottom: 14 }}>
+                      Create a new circle or load an existing one using a Circle ID.
+                    </div>
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                      <button className="btn btn-primary" onClick={() => setShowCreateCircle(true)} disabled={!walletAddr}>
+                        Create New Circle
+                      </button>
+                      <button className="btn btn-primary" onClick={() => setShowLoadCircle(true)}>
+                        Load Existing Circle
+                      </button>
+                    </div>
+                    {!walletAddr && (
+                      <div className="text-xs text-muted" style={{ marginTop: 10 }}>
+                        Connect a wallet to create a new circle. Loading existing circle works anytime.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="hero-feature">
-              <div className="hero-feature-icon">📋</div>
-              <span>Assign Tasks</span>
-            </div>
-            <div className="hero-feature">
-              <div className="hero-feature-icon">🔐</div>
-              <span>Sign Completions</span>
-            </div>
-            <div className="hero-feature">
-              <div className="hero-feature-icon">⛓️</div>
-              <span>On-Chain Proofs</span>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
-            <button
-              className="btn btn-primary btn-lg"
-              onClick={() => setShowCreateCircle(true)}
-              disabled={!walletAddr}
-            >
-              Create New Circle
-            </button>
-            <button
-              className="btn btn-secondary btn-lg"
-              onClick={() => setShowLoadCircle(true)}
-            >
-              Load Existing Circle
-            </button>
-          </div>
-
-          {!walletAddr && (
-            <p className="text-muted text-sm mt-4">
-              Connect your Casper wallet to create a circle, or load an existing one.
-            </p>
-          )}
-
-          {/* Quick demo hint */}
-          <div style={{ marginTop: "40px", padding: "20px", background: "rgba(255,255,255,0.03)", borderRadius: "12px", maxWidth: "500px", margin: "40px auto 0" }}>
-            <p className="text-sm text-muted" style={{ marginBottom: "8px" }}>
-              <strong>🎯 Quick Demo:</strong> Click "Load Existing Circle" and enter ID <strong>1</strong> to see the demo circle with sample tasks.
-            </p>
           </div>
         </section>
       )}
 
-      {/* Main content (when circle exists) */}
-      {circle && (
+      {page === "about" && (
+        <section className="page animate-in">
+          <section className="hero animate-in" style={{ paddingTop: 24, paddingBottom: 32 }}>
+            <h1 className="hero-title">Caregiving, Verified On-Chain</h1>
+          <p className="hero-subtitle">
+              CareCircle coordinates caregiving tasks for families, elder care, and community volunteers - with verifiable
+              task completion proofs recorded on the Casper blockchain.
+            </p>
+
+            <div className="hero-steps" aria-label="How it works">
+              <div className="hero-step">
+                <div className="hero-step-num">1</div>
+                <div className="hero-step-content">
+                  <div className="hero-step-title">Connect Wallet</div>
+                  <div className="hero-step-desc">Use Casper Wallet (or demo key) to sign actions.</div>
+            </div>
+            </div>
+              <div className="hero-step-arrow" aria-hidden="true">
+                <span className="hero-step-arrow-icon">→</span>
+            </div>
+              <div className="hero-step">
+                <div className="hero-step-num">2</div>
+                <div className="hero-step-content">
+                  <div className="hero-step-title">Create / Load Circle</div>
+                  <div className="hero-step-desc">Start a care team, or load an existing Circle ID.</div>
+                </div>
+              </div>
+              <div className="hero-step-arrow" aria-hidden="true">
+                <span className="hero-step-arrow-icon">→</span>
+              </div>
+              <div className="hero-step">
+                <div className="hero-step-num">3</div>
+                <div className="hero-step-content">
+                  <div className="hero-step-title">Assign Tasks</div>
+                  <div className="hero-step-desc">Create tasks, set priority, and assign caregivers.</div>
+                </div>
+              </div>
+              <div className="hero-step-arrow" aria-hidden="true">
+                <span className="hero-step-arrow-icon">→</span>
+              </div>
+              <div className="hero-step">
+                <div className="hero-step-num">4</div>
+                <div className="hero-step-content">
+                  <div className="hero-step-title">Complete & Verify</div>
+                  <div className="hero-step-desc">Complete tasks to generate an explorer-verifiable proof.</div>
+                </div>
+            </div>
+          </div>
+
+            <div className="hero-cta-row">
+            <button
+              className="btn btn-primary btn-lg"
+                onClick={() => circle ? navigateTo("my-circle") : navigateTo("home")}
+            >
+                {circle ? "Go To My Circle →" : "Get Started →"}
+            </button>
+              <button className="hero-secondary-link" onClick={() => navigateTo("help")}>
+                Have questions? Visit Help <span aria-hidden="true">→</span>
+            </button>
+          </div>
+          </section>
+
+          {/* About details removed per request */}
+        </section>
+      )}
+
+      {!circle && page === "support" && (
+        <section className="page animate-in">
+          <div className="card page-card">
+            <div className="card-header">
+              <h2 className="card-title">
+                <span className="card-title-icon">🛟</span>
+                Support
+              </h2>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigateTo("home")}>
+                ← Back
+              </button>
+            </div>
+
+            <div style={{ padding: "24px 0" }}>
+              {/* Quick Links */}
+              <div style={{ marginBottom: "32px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>Quick Links</h3>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
+                  <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                    📚 API Documentation
+                  </a>
+                  <a href="https://testnet.cspr.live" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                    🔍 Casper Explorer
+                  </a>
+                  <a href="https://testnet.cspr.live/tools/faucet" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                    💧 Testnet Faucet
+                  </a>
+                  <a href="https://docs.casper.network" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                    📖 Casper Docs
+                  </a>
+                  <button className="btn btn-secondary btn-sm" onClick={() => navigateTo("help")}>
+                    ❓ Help Center
+                  </button>
+                </div>
+              </div>
+
+              {/* Resource Cards */}
+              <div className="hero-info-grid" style={{ marginBottom: "32px" }}>
+                <div className="card hero-info-col">
+                  <div className="hero-info-title">🔌 API Documentation</div>
+                  <div className="hero-info-text">
+                    <p style={{ marginBottom: "12px" }}>
+                      Access the interactive Swagger API documentation to explore all available endpoints, request/response schemas, and test API calls.
+                    </p>
+                    <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
+                      Open Swagger UI →
+                    </a>
+                  </div>
+                </div>
+                <div className="card hero-info-col">
+                  <div className="hero-info-title">⛓️ Casper Blockchain</div>
+                  <div className="hero-info-text">
+                    <p style={{ marginBottom: "12px" }}>
+                      Explore transactions, get testnet tokens, and learn about the Casper blockchain infrastructure.
+                    </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <a href="https://testnet.cspr.live" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
+                        Testnet Explorer →
+                      </a>
+                      <a href="https://testnet.cspr.live/tools/faucet" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
+                        Get Testnet Tokens →
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Troubleshooting */}
+              <div style={{ marginBottom: "32px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>Troubleshooting</h3>
+                <div className="card" style={{ padding: "20px", background: "var(--bg-elevated)" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                    <div>
+                      <h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "8px", color: "var(--text-primary)" }}>❌ Wallet Connection Issues</h4>
+                      <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
+                        <li>Ensure the Casper Wallet extension is installed and enabled</li>
+                        <li>Check that you're on the correct network (Casper Testnet)</li>
+                        <li>Try refreshing the page and reconnecting your wallet</li>
+                        <li>Clear browser cache if connection persists</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "8px", color: "var(--text-primary)" }}>⚠️ Transaction Failures</h4>
+                      <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
+                        <li>Verify you have sufficient CSPR tokens for gas fees</li>
+                        <li>Check your internet connection and try again</li>
+                        <li>Ensure the API server is running (localhost:3005)</li>
+                        <li>Review transaction details in the Casper Explorer</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "8px", color: "var(--text-primary)" }}>🔍 Circle Not Loading</h4>
+                      <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
+                        <li>Verify the Circle ID is correct</li>
+                        <li>Check that the circle exists on-chain</li>
+                        <li>Try loading by wallet key instead of Circle ID</li>
+                        <li>Ensure you're connected with the correct wallet</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* System Information */}
+              <div style={{ marginBottom: "32px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>System Information</h3>
+                <div className="card" style={{ padding: "20px", background: "var(--bg-elevated)" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", fontSize: "0.9rem" }}>
+                    <div>
+                      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>Network</div>
+                      <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                        {isDemoMode() ? "Demo Mode" : "Casper Testnet"}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>API Server</div>
+                      <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                        {window.location.hostname === "localhost" ? "localhost:3005" : "Production"}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>Wallet Status</div>
+                      <div style={{ color: walletAddr ? "var(--care-green)" : "var(--text-muted)", fontWeight: 500 }}>
+                        {walletAddr ? "Connected" : "Not Connected"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Additional Resources */}
+              <div>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>Additional Resources</h3>
+                <div className="hero-info-grid">
+                  <div className="card hero-info-col">
+                    <div className="hero-info-title">📚 Documentation</div>
+                    <div className="hero-info-text">
+                      <ul style={{ margin: 0, paddingLeft: "20px", lineHeight: "1.8" }}>
+                        <li><a href="https://docs.casper.network" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper Network Docs</a></li>
+                        <li><a href="https://casper.network" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper Official Website</a></li>
+                        <li><a href="https://github.com/casper-network" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper GitHub</a></li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div className="card hero-info-col">
+                    <div className="hero-info-title">💬 Community</div>
+                    <div className="hero-info-text">
+                      <ul style={{ margin: 0, paddingLeft: "20px", lineHeight: "1.8" }}>
+                        <li><a href="https://discord.gg/casperblockchain" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper Discord</a></li>
+                        <li><a href="https://twitter.com/casperblockchain" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper Twitter</a></li>
+                        <li><a href="https://t.me/casperblockchain" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper Telegram</a></li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {!circle && page === "help" && (
+        <section className="page animate-in">
+          <div className="card page-card">
+            <div className="card-header">
+              <h2 className="card-title">
+                <span className="card-title-icon">❓</span>
+                Help
+              </h2>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigateTo("home")}>
+                ← Back
+              </button>
+            </div>
+            <HelpPanel activeTab={helpTab} setActiveTab={setHelpTab} maxHeight="none" />
+          </div>
+        </section>
+      )}
+
+      {/* Join Circle Page (from invitation) */}
+      {page === "join" && (
+        <section className="page animate-in">
+          <div className="card page-card" style={{ maxWidth: "600px", margin: "0 auto" }}>
+            <div className="card-header">
+              <h2 className="card-title">
+                <span className="card-title-icon">💚</span>
+                Join Care Circle
+              </h2>
+            </div>
+            <div className="modal-body">
+              {!invitationData ? (
+                <div style={{ textAlign: "center", padding: "40px" }}>
+                  <div className="loading-spinner" style={{ margin: "0 auto 20px" }}></div>
+                  <p>Loading invitation...</p>
+                </div>
+              ) : invitationData.error ? (
+                <div>
+                  <div className="notice notice-error mb-4">
+                    <div className="notice-icon">✕</div>
+                    <div className="notice-body">
+                      <div className="notice-title">Invalid Invitation</div>
+                      <div className="notice-text">
+                        {invitationData.error === "Invitation not found or already used" 
+                          ? "This invitation has already been used or doesn't exist."
+                          : invitationData.error === "Invitation has expired"
+                          ? "This invitation has expired. Please request a new invitation."
+                          : invitationData.error}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="modal-footer" style={{ marginTop: "20px" }}>
+                    <button className="btn btn-primary" onClick={() => navigateTo("home")}>
+                      Go to Get Started
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="notice notice-info mb-4">
+                    <div className="notice-icon">ℹ</div>
+                    <div className="notice-body">
+                      <div className="notice-title">You're Invited!</div>
+                      <div className="notice-text">
+                        <strong>{invitationData.inviter_name || "A circle owner"}</strong> has invited you to join{" "}
+                        <strong>{invitationData.circle_name}</strong> as <strong>{invitationData.member_name}</strong>.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="input-group">
+                    <label>Your Casper Address</label>
+                    <input
+                      className="input input-mono"
+                      placeholder="01... (your Casper public key)"
+                      value={joinAddress}
+                      onChange={(e) => setJoinAddress(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleAcceptInvitation()}
+                      autoFocus
+                    />
+                    <p className="text-xs text-muted mt-2">
+                      Enter your Casper wallet public key to join this care circle.
+                    </p>
+                  </div>
+
+                  {!walletAddr && (
+                    <div className="notice notice-warning mb-4">
+                      <div className="notice-icon">⚠</div>
+                      <div className="notice-body">
+                        <div className="notice-title">Connect Your Wallet</div>
+                        <div className="notice-text">
+                          You can connect your wallet first, or enter your public key manually above.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="modal-footer">
+                    <button className="btn btn-secondary" onClick={() => navigateTo("home")}>
+                      Cancel
+            </button>
+            <button
+                      className="btn btn-primary" 
+                      onClick={handleAcceptInvitation}
+                      disabled={busy || (!joinAddress.trim() && !walletAddr)}
+            >
+                      {busy ? "Joining..." : "Join Circle"}
+            </button>
+          </div>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Support page when circle is loaded */}
+      {circle && page === "support" && (
+        <section className="page animate-in">
+          <div className="card page-card">
+            <div className="card-header">
+              <h2 className="card-title">
+                <span className="card-title-icon">🛟</span>
+                Support
+              </h2>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigateTo("my-circle")}>
+                ← Back to My Circle
+              </button>
+            </div>
+
+            <div style={{ padding: "24px 0" }}>
+              {/* Quick Links */}
+              <div style={{ marginBottom: "32px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>Quick Links</h3>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
+                  <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                    📚 API Documentation
+                  </a>
+                  <a href="https://testnet.cspr.live" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                    🔍 Casper Explorer
+                  </a>
+                  <a href="https://testnet.cspr.live/tools/faucet" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                    💧 Testnet Faucet
+                  </a>
+                  <a href="https://docs.casper.network" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                    📖 Casper Docs
+                  </a>
+                  <button className="btn btn-secondary btn-sm" onClick={() => navigateTo("help")}>
+                    ❓ Help Center
+                  </button>
+                </div>
+              </div>
+
+              {/* Resource Cards */}
+              <div className="hero-info-grid" style={{ marginBottom: "32px" }}>
+                <div className="card hero-info-col">
+                  <div className="hero-info-title">🔌 API Documentation</div>
+                  <div className="hero-info-text">
+                    <p style={{ marginBottom: "12px" }}>
+                      Access the interactive Swagger API documentation to explore all available endpoints, request/response schemas, and test API calls.
+                    </p>
+                    <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
+                      Open Swagger UI →
+                    </a>
+                  </div>
+                </div>
+                <div className="card hero-info-col">
+                  <div className="hero-info-title">⛓️ Casper Blockchain</div>
+                  <div className="hero-info-text">
+                    <p style={{ marginBottom: "12px" }}>
+                      Explore transactions, get testnet tokens, and learn about the Casper blockchain infrastructure.
+                    </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <a href="https://testnet.cspr.live" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
+                        Testnet Explorer →
+                      </a>
+                      <a href="https://testnet.cspr.live/tools/faucet" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
+                        Get Testnet Tokens →
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Circle-Specific Information */}
+              <div style={{ marginBottom: "32px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>Your Circle</h3>
+                <div className="card" style={{ padding: "20px", background: "var(--bg-elevated)" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", fontSize: "0.9rem" }}>
+                    <div>
+                      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>Circle Name</div>
+                      <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>{circle.name}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>Circle ID</div>
+                      <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>{circle.id}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>Members</div>
+                      <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>{members.length}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>Tasks</div>
+                      <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>{stats.total_tasks} total</div>
+                    </div>
+                    {circle.txHash && (
+                      <div>
+                        <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>Creation Transaction</div>
+                        <a href={getExplorerUrl(circle.txHash)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline", fontSize: "0.85rem" }}>
+                          View on Explorer →
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Troubleshooting */}
+              <div style={{ marginBottom: "32px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>Troubleshooting</h3>
+                <div className="card" style={{ padding: "20px", background: "var(--bg-elevated)" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                    <div>
+                      <h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "8px", color: "var(--text-primary)" }}>❌ Task Not Completing</h4>
+                      <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
+                        <li>Ensure you're the assigned member for the task</li>
+                        <li>Check that you have sufficient CSPR for gas fees</li>
+                        <li>Verify your wallet is connected and unlocked</li>
+                        <li>Review the transaction in the Casper Explorer</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "8px", color: "var(--text-primary)" }}>👥 Member Management</h4>
+                      <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
+                        <li>Only circle owners can add new members</li>
+                        <li>Verify member addresses before adding</li>
+                        <li>Members can update their own profile names</li>
+                        <li>Check member status in the Circle section</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "8px", color: "var(--text-primary)" }}>📊 Data Not Updating</h4>
+                      <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
+                        <li>Refresh the page to reload data from the API</li>
+                        <li>Check API server connection (localhost:3005)</li>
+                        <li>Verify blockchain transactions completed successfully</li>
+                        <li>Wait a few seconds for on-chain data to sync</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* System Information */}
+              <div style={{ marginBottom: "32px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>System Information</h3>
+                <div className="card" style={{ padding: "20px", background: "var(--bg-elevated)" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", fontSize: "0.9rem" }}>
+                    <div>
+                      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>Network</div>
+                      <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                        {isDemoMode() ? "Demo Mode" : "Casper Testnet"}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>API Server</div>
+                      <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                        {window.location.hostname === "localhost" ? "localhost:3005" : "Production"}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>Wallet Status</div>
+                      <div style={{ color: walletAddr ? "var(--care-green)" : "var(--text-muted)", fontWeight: 500 }}>
+                        {walletAddr ? "Connected" : "Not Connected"}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>Wallet Balance</div>
+                      <div style={{ color: walletAddr ? (() => {
+                        const balanceStr = isDemoMode() ? "1,234.56" : (walletBalance !== "0" ? walletBalance : "0.00");
+                        const balanceNum = parseFloat(balanceStr.replace(/,/g, "")) || 0;
+                        return balanceNum >= 1 ? "var(--care-green)" : balanceNum > 0 ? "#eab308" : "#ef4444";
+                      })() : "var(--text-muted)", fontWeight: 500 }}>
+                        {walletAddr ? (isDemoMode() ? "1,234.56" : (walletBalance !== "0" ? walletBalance : "0.00")) + " CSPR" : "N/A"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Additional Resources */}
+              <div>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>Additional Resources</h3>
+                <div className="hero-info-grid">
+                  <div className="card hero-info-col">
+                    <div className="hero-info-title">📚 Documentation</div>
+                    <div className="hero-info-text">
+                      <ul style={{ margin: 0, paddingLeft: "20px", lineHeight: "1.8" }}>
+                        <li><a href="https://docs.casper.network" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper Network Docs</a></li>
+                        <li><a href="https://casper.network" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper Official Website</a></li>
+                        <li><a href="https://github.com/casper-network" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper GitHub</a></li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div className="card hero-info-col">
+                    <div className="hero-info-title">💬 Community</div>
+                    <div className="hero-info-text">
+                      <ul style={{ margin: 0, paddingLeft: "20px", lineHeight: "1.8" }}>
+                        <li><a href="https://discord.gg/casperblockchain" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper Discord</a></li>
+                        <li><a href="https://twitter.com/casperblockchain" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper Twitter</a></li>
+                        <li><a href="https://t.me/casperblockchain" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)" }}>Casper Telegram</a></li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {circle && page === "help" && (
+        <section className="page animate-in">
+          <div className="card page-card">
+            <div className="card-header">
+              <h2 className="card-title">
+                <span className="card-title-icon">❓</span>
+                Help
+              </h2>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigateTo("my-circle")}>
+                ← Back to My Circle
+              </button>
+            </div>
+            <HelpPanel activeTab={helpTab} setActiveTab={setHelpTab} maxHeight="none" />
+          </div>
+        </section>
+      )}
+
+      {/* Main content (when circle exists - show only for my-circle page) */}
+      {circle && page === "my-circle" && (
         <>
           {/* Stats bar */}
           <div className="stats-bar animate-in">
@@ -924,7 +2347,7 @@ export default function App() {
               </div>
 
               <div className="circle-info">
-                <div className="circle-avatar">💜</div>
+                <div className="circle-avatar">💚</div>
                 <div className="circle-details">
                   <h3>{circle.name}</h3>
                   <div className="circle-meta">
@@ -935,6 +2358,19 @@ export default function App() {
                 </div>
               </div>
 
+              {walletAddr && (
+                <div style={{ marginTop: "12px", marginBottom: "20px" }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleEditProfile}
+                    disabled={busy}
+                    style={{ width: "100%" }}
+                  >
+                    ✏️ Edit Profile
+                  </button>
+                </div>
+              )}
+
               {circle.txHash && (
                 <div className="task-tx mb-4">
                   <span>🔗</span>
@@ -944,27 +2380,20 @@ export default function App() {
                 </div>
               )}
 
-              <div className="circle-actions">
-                <button
-                  className="btn btn-care"
-                  onClick={() => setShowAddTask(true)}
-                  disabled={busy}
-                >
-                  + Add Task
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => setShowAddMember(true)}
-                  disabled={busy || walletAddr.toLowerCase() !== circle.owner?.toLowerCase()}
-                >
-                  + Add Member
-                </button>
-              </div>
-
               {/* Members section */}
               <div className="members-section">
                 <div className="members-header">
                   <span className="members-title">Members ({members.length})</span>
+                  {walletAddr.toLowerCase() === circle.owner?.toLowerCase() && (
+                <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setShowAddMember(true)}
+                  disabled={busy}
+                      style={{ marginLeft: "auto" }}
+                >
+                  + Add Member
+                </button>
+                  )}
                 </div>
                 {members.length === 0 ? (
                   <p className="text-sm text-muted">No members loaded</p>
@@ -973,6 +2402,7 @@ export default function App() {
                     <MemberItem
                       key={i}
                       address={m.address}
+                      name={m.name}
                       isOwner={m.isOwner}
                       isCurrentUser={m.address?.toLowerCase() === walletAddr?.toLowerCase()}
                     />
@@ -988,8 +2418,15 @@ export default function App() {
                   <span className="card-title-icon">📋</span>
                   Tasks
                 </h2>
-
-                <div className="tasks-filters">
+                <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    className="btn btn-care btn-sm"
+                    onClick={() => setShowAddTask(true)}
+                    disabled={busy}
+                  >
+                    + Add Task
+                  </button>
+                  <div className="tasks-filters" style={{ display: "flex", gap: "8px" }}>
                   <button
                     className={`filter-btn ${filter === "all" ? "active" : ""}`}
                     onClick={() => setFilter("all")}
@@ -1008,6 +2445,7 @@ export default function App() {
                   >
                     Completed ({stats.completed_tasks})
                   </button>
+                  </div>
                 </div>
               </div>
 
@@ -1040,6 +2478,12 @@ export default function App() {
                       onComplete={handleCompleteTask}
                       walletAddr={walletAddr}
                       busy={busy}
+                      members={members}
+                      onViewDetails={(task) => {
+                        setSelectedTask(task);
+                        setTaskAssignTo(task.assigned_to || "");
+                        setShowTaskDetails(true);
+                      }}
                     />
                   ))}
                 </div>
@@ -1071,6 +2515,76 @@ export default function App() {
       </footer>
 
       {/* ==================== Modals ==================== */}
+
+      {/* Connect Wallet Modal (Demo Mode) */}
+      <Modal
+        isOpen={showConnectWallet}
+        onClose={() => setShowConnectWallet(false)}
+        title="Connect Wallet"
+        size="lg"
+      >
+        <div className="modal-body">
+          <div className="notice notice-warning mb-4">
+            <div className="notice-icon">⚠</div>
+            <div className="notice-body">
+              <div className="notice-title">Casper Wallet not detected</div>
+              <div className="notice-text">
+                Install the Casper Wallet extension for live blockchain transactions, or enter a Casper public key
+                below to continue in demo mode.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: "12px", padding: "12px", background: "rgba(255,255,255,0.03)", borderRadius: "10px" }}>
+            <div className="text-sm" style={{ lineHeight: 1.5 }}>
+              <div style={{ marginBottom: "8px" }}><strong>To use live blockchain:</strong></div>
+              <ol style={{ margin: 0, paddingLeft: "18px" }}>
+                <li>Install Casper Wallet extension</li>
+                <li>Refresh this page</li>
+              </ol>
+              <div style={{ marginTop: "10px" }}>
+                <strong>For demo mode:</strong> enter a Casper public key below.
+              </div>
+            </div>
+          </div>
+
+          <div className="input-group">
+            <label>Casper Public Key</label>
+            <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+            <input
+              className="input input-mono"
+              value={demoWalletKey}
+              onChange={(e) => setDemoWalletKey(e.target.value)}
+              placeholder="02... (hex)"
+              onKeyDown={(e) => e.key === "Enter" && handleConnectDemoWallet()}
+              autoFocus
+                style={{ flex: 1 }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleLoadDemoKey}
+                style={{ whiteSpace: "nowrap" }}
+              >
+                Load Demo Key
+              </button>
+            </div>
+            {demoWalletError && (
+              <p className="text-sm" style={{ marginTop: "8px", color: "#f87171" }}>
+                {demoWalletError}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={() => setShowConnectWallet(false)} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" onClick={handleConnectDemoWallet} disabled={busy}>
+            {busy ? "Connecting..." : "Connect"}
+          </button>
+        </div>
+      </Modal>
 
       {/* Create Circle Modal */}
       <Modal
@@ -1108,15 +2622,41 @@ export default function App() {
       {/* Load Circle Modal */}
       <Modal
         isOpen={showLoadCircle}
-        onClose={() => setShowLoadCircle(false)}
+        onClose={() => {
+          setShowLoadCircle(false);
+          setLoadCircleMode("id");
+          setCircleIdToLoad("");
+          setWalletKeyToLoad("");
+        }}
         title="Load Existing Circle"
       >
         <div className="modal-body">
           <p className="text-muted mb-4">
-            Enter the ID of an existing circle to load it. You can find the circle ID
-            from the owner or from a previous session.
+            Load a circle by ID or by wallet key used to create it.
           </p>
 
+          {/* Mode selector */}
+          <div style={{ display: "flex", gap: "8px", marginBottom: "20px", padding: "4px", background: "rgba(255, 255, 255, 0.03)", borderRadius: "8px" }}>
+            <button
+              type="button"
+              className={`btn ${loadCircleMode === "id" ? "btn-primary" : "btn-secondary"}`}
+              onClick={() => setLoadCircleMode("id")}
+              style={{ flex: 1 }}
+            >
+              By Circle ID
+            </button>
+            <button
+              type="button"
+              className={`btn ${loadCircleMode === "wallet" ? "btn-primary" : "btn-secondary"}`}
+              onClick={() => setLoadCircleMode("wallet")}
+              style={{ flex: 1 }}
+            >
+              By Wallet Key
+            </button>
+          </div>
+
+          {loadCircleMode === "id" ? (
+            <>
           <div className="input-group">
             <label>Circle ID</label>
             <input
@@ -1127,6 +2667,7 @@ export default function App() {
               value={circleIdToLoad}
               onChange={(e) => setCircleIdToLoad(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleLoadCircle()}
+                  autoFocus
             />
           </div>
 
@@ -1135,13 +2676,129 @@ export default function App() {
               💡 <strong>Try ID: 1</strong> to see the demo circle with sample data
             </p>
           </div>
+            </>
+          ) : (
+            <>
+              <div className="input-group">
+                <label>Wallet Key</label>
+                <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+                  <input
+                    className="input input-mono"
+                    placeholder="02... (hex)"
+                    value={walletKeyToLoad}
+                    onChange={(e) => setWalletKeyToLoad(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleLoadCircle()}
+                    autoFocus
+                    style={{ flex: 1 }}
+                  />
+                  {walletAddr && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => setWalletKeyToLoad(walletAddr)}
+                      style={{ whiteSpace: "nowrap" }}
+                    >
+                      Use Current
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ marginTop: "16px", padding: "12px", background: "rgba(34, 197, 94, 0.1)", borderRadius: "8px" }}>
+                <p className="text-sm" style={{ color: "var(--brand)" }}>
+                  💡 Enter the wallet key (public key) used to create the circle. If multiple circles exist, the most recent one will be loaded.
+                </p>
+              </div>
+            </>
+          )}
         </div>
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={() => setShowLoadCircle(false)}>
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => {
+              setShowLoadCircle(false);
+              setLoadCircleMode("id");
+              setCircleIdToLoad("");
+              setWalletKeyToLoad("");
+            }}
+          >
             Cancel
           </button>
           <button className="btn btn-primary" onClick={handleLoadCircle} disabled={busy}>
             {busy ? "Loading..." : "Load Circle"}
+          </button>
+        </div>
+      </Modal>
+
+      {/* Circle Created Confirmation Modal */}
+      <Modal
+        isOpen={showCircleCreated}
+        onClose={() => setShowCircleCreated(false)}
+        title="Circle Created Successfully!"
+      >
+        <div className="modal-body">
+          <div style={{ textAlign: "center", marginBottom: "24px" }}>
+            <div style={{ 
+              fontSize: "48px", 
+              marginBottom: "16px",
+              lineHeight: 1
+            }}>✅</div>
+            <h3 style={{ 
+              marginBottom: "12px", 
+              fontSize: "1.5rem",
+              fontWeight: 700,
+              color: "var(--text-primary)"
+            }}>
+              {createdCircleName}
+            </h3>
+            <p className="text-muted" style={{ marginBottom: "24px" }}>
+              Your Care Circle has been created and saved to the database.
+            </p>
+          </div>
+
+          <div style={{ 
+            padding: "20px", 
+            background: "rgba(34, 197, 94, 0.1)", 
+            borderRadius: "12px",
+            border: "1px solid rgba(34, 197, 94, 0.2)",
+            marginBottom: "20px"
+          }}>
+            <div style={{ marginBottom: "8px", fontSize: "0.875rem", color: "var(--text-muted)" }}>
+              Care Circle ID
+            </div>
+            <div style={{ 
+              fontSize: "2rem", 
+              fontWeight: 700, 
+              color: "var(--brand)",
+              fontFamily: "var(--font-mono)",
+              letterSpacing: "0.05em"
+            }}>
+              {createdCircleId}
+            </div>
+          </div>
+
+          <div style={{ 
+            padding: "16px", 
+            background: "rgba(255, 255, 255, 0.03)", 
+            borderRadius: "8px",
+            fontSize: "0.875rem",
+            color: "var(--text-muted)",
+            lineHeight: 1.6
+          }}>
+            <strong style={{ color: "var(--text-primary)" }}>Important:</strong> Save this Circle ID to share with members or to load your circle later. The circle has been saved to the database with your wallet key.
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button 
+            className="btn btn-primary" 
+            onClick={() => {
+              setShowCircleCreated(false);
+              setCreatedCircleId(null);
+              setCreatedCircleName("");
+            }}
+            style={{ width: "100%" }}
+          >
+            Got it!
           </button>
         </div>
       </Modal>
@@ -1188,15 +2845,36 @@ export default function App() {
           </div>
 
           <div className="input-group">
-            <label>Assign To (Casper Address)</label>
-            <input
-              className="input input-mono"
-              placeholder={walletAddr || "01abc..."}
+            <label>Assign To (Leave empty to assign later)</label>
+            <select
+              className="input"
               value={newTaskAssignee}
               onChange={(e) => setNewTaskAssignee(e.target.value)}
+            >
+              <option value="">-- Not Assigned --</option>
+              {members.map((member) => (
+                <option key={member.address} value={member.address}>
+                  {member.name || formatAddress(member.address)}
+                  {member.isOwner && " (Owner)"}
+                  {member.address?.toLowerCase() === walletAddr?.toLowerCase() && " (you)"}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="input-group">
+            <label>Payment Amount (CSPR)</label>
+            <input
+              className="input"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="0.00"
+              value={newTaskPayment}
+              onChange={(e) => setNewTaskPayment(e.target.value)}
             />
             <p className="text-xs text-muted mt-2">
-              Leave empty to assign to yourself
+              Optional. Amount to pay the assignee when task is completed.
             </p>
           </div>
         </div>
@@ -1213,7 +2891,13 @@ export default function App() {
       {/* Add Member Modal */}
       <Modal
         isOpen={showAddMember}
-        onClose={() => setShowAddMember(false)}
+        onClose={() => {
+          setShowAddMember(false);
+          setNewMemberAddr("");
+          setNewMemberName("");
+          setNewMemberEmail("");
+          setMemberInviteMode("address");
+        }}
         title="Add Circle Member"
       >
         <div className="modal-body">
@@ -1222,6 +2906,41 @@ export default function App() {
             They'll be able to view tasks and complete assigned work.
           </p>
 
+          <div className="input-group mb-4">
+            <label>Invite Method</label>
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                type="button"
+                className={`btn ${memberInviteMode === "address" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setMemberInviteMode("address")}
+                style={{ flex: 1 }}
+              >
+                By Casper Address
+              </button>
+              <button
+                type="button"
+                className={`btn ${memberInviteMode === "email" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setMemberInviteMode("email")}
+                style={{ flex: 1 }}
+              >
+                By Email
+              </button>
+            </div>
+          </div>
+
+          <div className="input-group">
+            <label>Member Name</label>
+            <input
+              className="input"
+              placeholder="e.g., John Doe"
+              value={newMemberName}
+              onChange={(e) => setNewMemberName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (memberInviteMode === "email" ? handleInviteByEmail() : handleAddMember())}
+              autoFocus
+            />
+          </div>
+
+          {memberInviteMode === "address" ? (
           <div className="input-group">
             <label>Member's Casper Address</label>
             <input
@@ -1229,16 +2948,231 @@ export default function App() {
               placeholder="01..."
               value={newMemberAddr}
               onChange={(e) => setNewMemberAddr(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddMember()}
             />
+          </div>
+          ) : (
+            <div className="input-group">
+              <label>Email Address</label>
+              <input
+                className="input"
+                type="email"
+                placeholder="member@example.com"
+                value={newMemberEmail}
+                onChange={(e) => setNewMemberEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleInviteByEmail()}
+              />
+              <p className="text-xs text-muted mt-2">
+                An invitation email will be sent with a link to join the care circle.
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => {
+              setShowAddMember(false);
+              setNewMemberAddr("");
+              setNewMemberName("");
+              setNewMemberEmail("");
+              setMemberInviteMode("address");
+            }}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+          {memberInviteMode === "email" ? (
+            <button className="btn btn-primary" onClick={handleInviteByEmail} disabled={busy || !newMemberName.trim() || !newMemberEmail.trim()}>
+              {busy ? "Sending..." : "Send Invitation"}
+            </button>
+          ) : (
+            <button className="btn btn-primary" onClick={handleAddMember} disabled={busy || !newMemberName.trim() || !newMemberAddr.trim()}>
+            {busy ? "Adding..." : "Add Member"}
+          </button>
+          )}
+        </div>
+      </Modal>
+
+      {/* Edit Profile Modal */}
+      <Modal
+        isOpen={showEditProfile}
+        onClose={() => {
+          setShowEditProfile(false);
+          setProfileName("");
+          setProfileKey("");
+        }}
+        title="Edit Profile"
+      >
+        <div className="modal-body">
+          <p className="text-muted mb-4">
+            Update your profile information for this circle.
+          </p>
+
+          <div className="input-group">
+            <label>Name</label>
+            <input
+              className="input"
+              placeholder="e.g., Sarah Johnson"
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSaveProfile()}
+              autoFocus
+            />
+          </div>
+
+          <div className="input-group">
+            <label>Wallet Key</label>
+            <input
+              className="input input-mono"
+              value={profileKey}
+              readOnly
+              style={{ opacity: 0.7, cursor: "not-allowed" }}
+            />
+            <p className="text-xs text-muted mt-2">
+              Your wallet address cannot be changed
+            </p>
           </div>
         </div>
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={() => setShowAddMember(false)}>
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => {
+              setShowEditProfile(false);
+              setProfileName("");
+              setProfileKey("");
+            }}
+            disabled={busy}
+          >
             Cancel
           </button>
-          <button className="btn btn-primary" onClick={handleAddMember} disabled={busy}>
-            {busy ? "Adding..." : "Add Member"}
+          <button className="btn btn-primary" onClick={handleSaveProfile} disabled={busy || !profileName.trim()}>
+            {busy ? "Saving..." : "Save Profile"}
           </button>
+        </div>
+      </Modal>
+
+      {/* Task Details Modal */}
+      <Modal
+        isOpen={showTaskDetails}
+        onClose={() => {
+          setShowTaskDetails(false);
+          setSelectedTask(null);
+          setTaskAssignTo("");
+        }}
+        title={`Task #${selectedTask?.id || ""}`}
+      >
+        {selectedTask && (
+          <div className="modal-body">
+            <div className="input-group mb-4">
+              <label>Task Title</label>
+              <input
+                className="input"
+                value={selectedTask.title}
+                readOnly
+                disabled
+              />
+            </div>
+
+            <div className="input-group mb-4">
+              <label>Description</label>
+              <textarea
+                className="input"
+                value={selectedTask.description || ""}
+                readOnly
+                disabled
+                rows={3}
+              />
+            </div>
+
+            <div className="input-group mb-4">
+              <label>Priority</label>
+              <select
+                className="input"
+                value={selectedTask.priority}
+                disabled
+              >
+                <option value={0}>Low</option>
+                <option value={1}>Medium</option>
+                <option value={2}>High</option>
+                <option value={3}>Urgent</option>
+              </select>
+            </div>
+
+            <div className="input-group mb-4">
+              <label>Assign To</label>
+              <select
+                className="input"
+                value={taskAssignTo}
+                onChange={(e) => setTaskAssignTo(e.target.value)}
+              >
+                <option value="">-- Not Assigned --</option>
+                {members.map((member) => (
+                  <option key={member.address} value={member.address}>
+                    {member.name || formatAddress(member.address)}
+                    {member.isOwner && " (Owner)"}
+                    {member.address?.toLowerCase() === walletAddr?.toLowerCase() && " (you)"}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="input-group mb-4">
+              <label>Status</label>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <span className={`task-status ${selectedTask.completed ? "completed" : "open"}`}>
+                  {selectedTask.completed ? "✓ Completed" : "○ Open"}
+                </span>
+                {selectedTask.tx_hash && (
+                  <a href={getExplorerUrl(selectedTask.tx_hash)} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.875rem" }}>
+                    View on-chain proof ↗
+                  </a>
+                )}
+              </div>
+            </div>
+
+            <div className="input-group mb-4">
+              <label>Created by</label>
+              <input
+                className="input input-mono"
+                value={formatAddress(selectedTask.created_by)}
+                readOnly
+                disabled
+              />
+            </div>
+          </div>
+        )}
+        <div className="modal-footer">
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              setShowTaskDetails(false);
+              setSelectedTask(null);
+              setTaskAssignTo("");
+            }}
+          >
+            Close
+          </button>
+          {selectedTask && !selectedTask.completed && (
+            <>
+              {(walletAddr?.toLowerCase() === selectedTask.created_by?.toLowerCase() || walletAddr?.toLowerCase() === circle?.owner?.toLowerCase()) && (
+                <button
+                  className="btn btn-danger"
+                  onClick={handleCancelTask}
+                  disabled={busy}
+                >
+                  {busy ? "Canceling..." : "Cancel Task"}
+                </button>
+              )}
+              <button
+                className="btn btn-care"
+                onClick={handleAssignTask}
+                disabled={busy}
+              >
+                {busy ? "Updating..." : "Update Assignment"}
+              </button>
+            </>
+          )}
         </div>
       </Modal>
     </div>

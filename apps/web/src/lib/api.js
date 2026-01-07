@@ -53,6 +53,20 @@ export async function fetchCirclesByOwner(address) {
   return apiRequest(`/circles/owner/${address}`);
 }
 
+/**
+ * Get all circles created with a wallet key
+ */
+export async function fetchCirclesByWalletKey(walletKey) {
+  return apiRequest(`/circles/wallet/${walletKey}`);
+}
+
+/**
+ * Get circles by name (partial match, case-insensitive)
+ */
+export async function fetchCirclesByName(name) {
+  return apiRequest(`/circles/name/${encodeURIComponent(name)}`);
+}
+
 // ==================== Member API ====================
 
 /**
@@ -70,6 +84,33 @@ export async function upsertMember(member) {
  */
 export async function fetchMembers(circleId) {
   return apiRequest(`/circles/${circleId}/members`);
+}
+
+/**
+ * Send member invitation by email
+ */
+export async function sendMemberInvitation(invitation) {
+  return apiRequest("/invitations/send", {
+    method: "POST",
+    body: JSON.stringify(invitation),
+  });
+}
+
+/**
+ * Get invitation by token
+ */
+export async function getInvitationByToken(token) {
+  return apiRequest(`/invitations/${token}`);
+}
+
+/**
+ * Accept invitation and add member
+ */
+export async function acceptInvitation(token, memberData) {
+  return apiRequest(`/invitations/${token}/accept`, {
+    method: "POST",
+    body: JSON.stringify(memberData),
+  });
 }
 
 // ==================== Task API ====================
