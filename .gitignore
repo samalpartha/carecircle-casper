@@ -6,3 +6,21 @@ dist
 *.db-wal
 .DS_Store
 .env
+
+# Large media files (store in cloud/docs)
+*.mp4
+*.mov
+*.avi
+*.pdf
+*.zip
+*.tar.gz
+
+# Large images (use optimized versions)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+!apps/web/public/**/*.png
+!apps/web/public/**/*.jpg
+!apps/web/public/**/*.svg
