@@ -452,25 +452,48 @@ export async function transferCSPR({ recipientAddress, amountMotes, openWalletUI
   }
   
   // Calculate amount in CSPR for display
-  // Handle both string and number inputs, and very large numbers
+  // Handle both string, number, and BigInt inputs safely
   let amountCSPR;
   try {
-    if (typeof amountMotes === 'bigint' || (typeof amountMotes === 'string' && amountMotes.length > 15)) {
-      // For BigInt or very large strings, use BigInt for calculation
-      const amountBigInt = typeof amountMotes === 'bigint' ? amountMotes : BigInt(amountMotes);
-      const csprBigInt = amountBigInt / BigInt(1_000_000_000);
-      const remainder = amountBigInt % BigInt(1_000_000_000);
-      amountCSPR = `${csprBigInt.toString()}.${remainder.toString().padStart(9, '0').slice(0, 2)}`;
+    // Always convert to string first to handle BigInt safely
+    let amountStr;
+    if (typeof amountMotes === 'bigint') {
+      amountStr = amountMotes.toString();
     } else {
-      // For smaller numbers, use regular division
-      const amountNum = typeof amountMotes === 'string' ? parseFloat(amountMotes) : Number(amountMotes);
-      amountCSPR = (amountNum / 1_000_000_000).toFixed(2);
+      amountStr = String(amountMotes);
     }
+    
+    // Remove any non-numeric characters (keep only digits - no decimal point for BigInt)
+    const cleanAmount = amountStr.replace(/[^0-9]/g, '');
+    
+    if (!cleanAmount || cleanAmount === '0') {
+      throw new Error("Invalid payment amount: must be greater than 0");
+    }
+    
+    // Use BigInt for calculation to avoid precision issues and BigInt conversion errors
+    // NEVER use parseFloat or Number() on values that might be BigInt
+    const amountBigInt = BigInt(cleanAmount);
+    const csprBigInt = amountBigInt / BigInt(1_000_000_000);
+    const remainder = amountBigInt % BigInt(1_000_000_000);
+    const remainderStr = remainder.toString().padStart(9, '0');
+    amountCSPR = `${csprBigInt.toString()}.${remainderStr.slice(0, 2)}`;
   } catch (err) {
-    // Fallback: try to convert to string and parse
-    const amountStr = String(amountMotes);
-    const amountNum = parseFloat(amountStr);
-    amountCSPR = (amountNum / 1_000_000_000).toFixed(2);
+    // Fallback: try to convert to string and use BigInt
+    try {
+      const amountStr = typeof amountMotes === 'bigint' ? amountMotes.toString() : String(amountMotes);
+      const cleanAmount = amountStr.replace(/[^0-9]/g, '');
+      if (cleanAmount && cleanAmount !== '0') {
+        const amountBigInt = BigInt(cleanAmount);
+        const csprBigInt = amountBigInt / BigInt(1_000_000_000);
+        const remainder = amountBigInt % BigInt(1_000_000_000);
+        amountCSPR = `${csprBigInt.toString()}.${remainder.toString().padStart(9, '0').slice(0, 2)}`;
+      } else {
+        amountCSPR = "0.00";
+      }
+    } catch (fallbackErr) {
+      console.error("Error calculating CSPR amount:", fallbackErr);
+      amountCSPR = "0.00";
+    }
   }
   
   console.log(`💰 Preparing transfer: ${amountCSPR} CSPR`);
