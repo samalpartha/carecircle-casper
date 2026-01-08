@@ -1,4 +1,5 @@
 # Dockerfile for CareCircle Backend API
+# This Dockerfile works when Railway builds from repository root
 FROM node:18-alpine
 
 # Install build dependencies for native modules (better-sqlite3 needs these)
@@ -7,14 +8,14 @@ RUN apk add --no-cache python3 make g++
 # Set working directory
 WORKDIR /app
 
-# Copy package files first (for better caching)
-COPY package*.json ./
+# Copy package files from apps/api
+COPY apps/api/package*.json ./
 
 # Install dependencies
 RUN npm install
 
-# Copy source code (handle both root and apps/api contexts)
-COPY src ./src
+# Copy source code from apps/api/src
+COPY apps/api/src ./src
 
 # Create directory for SQLite database
 RUN mkdir -p /app/data
