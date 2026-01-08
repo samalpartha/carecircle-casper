@@ -12,10 +12,17 @@ app.use(cors());
 app.use(express.json());
 
 // Use /tmp for Vercel (only writable location), or custom path from env, or default
-const dbFilename = process.env.VERCEL || process.env.VERCEL_ENV
-  ? (process.env.DB_FILE || "/tmp/carecircle-application.db")
-  : (process.env.DB_FILE || "carecircle-application.db");
-const db = openDb(dbFilename);
+let db;
+try {
+  const dbFilename = process.env.VERCEL || process.env.VERCEL_ENV
+    ? "carecircle-application.db"  // Just filename, db.js will handle /tmp path
+    : (process.env.DB_FILE || "carecircle-application.db");
+  db = openDb(dbFilename);
+  console.log(`[API] Database initialized: ${dbFilename}`);
+} catch (error) {
+  console.error(`[API] Failed to initialize database:`, error);
+  // Continue without database - endpoints will handle errors gracefully
+}
 
 // ==================== Swagger Setup ====================
 
@@ -206,6 +213,10 @@ app.get("/health", (_, res) => res.json({
  */
 app.post("/circles/upsert", (req, res) => {
   try {
+    if (!db) {
+      return res.status(503).json({ error: "Database not available" });
+    }
+    
     const schema = z.object({
       id: z.number().int().positive(),
       name: z.string().min(1),

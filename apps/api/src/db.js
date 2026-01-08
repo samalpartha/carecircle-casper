@@ -1,14 +1,29 @@
 import Database from "better-sqlite3";
+import fs from "fs";
+import path from "path";
 
 export function openDb(filename = "carecircle-application.db") {
-  // Use /tmp directory for Vercel serverless functions (only writable location)
-  const dbPath = process.env.VERCEL || process.env.VERCEL_ENV 
-    ? `/tmp/${filename}`
-    : filename;
-  const db = new Database(dbPath);
+  try {
+    // Use /tmp directory for Vercel serverless functions (only writable location)
+    let dbPath;
+    if (process.env.VERCEL || process.env.VERCEL_ENV) {
+      // Ensure /tmp directory exists
+      const tmpDir = "/tmp";
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+      dbPath = path.join(tmpDir, filename);
+    } else {
+      dbPath = filename;
+    }
+    
+    console.log(`[DB] Opening database at: ${dbPath}`);
+    const db = new Database(dbPath);
   
-  // Enable WAL mode for better performance
-  db.exec(`PRAGMA journal_mode = WAL;`);
+    // Enable WAL mode for better performance (skip in Vercel to avoid issues)
+    if (!process.env.VERCEL && !process.env.VERCEL_ENV) {
+      db.exec(`PRAGMA journal_mode = WAL;`);
+    }
   
   // Create tables
   db.exec(`
@@ -230,5 +245,10 @@ export function openDb(filename = "carecircle-application.db") {
     CREATE INDEX IF NOT EXISTS idx_invitations_status ON invitations(status);
   `);
   
-  return db;
+    console.log(`[DB] Database initialized successfully`);
+    return db;
+  } catch (error) {
+    console.error(`[DB] Failed to open database:`, error);
+    throw new Error(`Database initialization failed: ${error.message}`);
+  }
 }
