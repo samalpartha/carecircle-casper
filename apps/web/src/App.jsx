@@ -628,11 +628,19 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
           </span>
           {task.completed ? (
             <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-              ({hasPaymentTxHash 
-                ? (task.request_money ? "Paid by assignee" : "Paid") 
-                : (task.request_money 
-                  ? (task.rejected === 1 || task.rejected === true ? "Rejected by assignee" : "Accepted - payment pending")
-                  : (canMakePayment ? "Payment pending" : "Payment pending"))})
+              {(() => {
+                if (hasPaymentTxHash) {
+                  const txHash = String(task.payment_tx_hash);
+                  if (txHash.startsWith('pending-')) {
+                    return "(Payment initiated)";
+                  }
+                  return task.request_money ? "(Paid by assignee)" : "(Paid)";
+                }
+                if (task.request_money) {
+                  return (task.rejected === 1 || task.rejected === true) ? "(Rejected by assignee)" : "(Accepted - payment pending)";
+                }
+                return "(Payment pending)";
+              })()}
             </span>
           ) : (
             <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
@@ -1921,46 +1929,35 @@ export default function App() {
         addToast("Info", `Transfer page opened. Assignee (${formatAddress(task.assigned_to, 6, 4)}) needs to transfer ${paymentCSPR} CSPR to you (${formatAddress(task.created_by, 6, 4)}).`, "info");
       } else {
         // Regular task: creator pays assignee
-        // Initiate transfer from creator to assignee
-        setLoadingMessage(`Preparing transfer of ${paymentCSPR} CSPR...`);
-        console.log(`💸 Initiating transfer: ${paymentCSPR} CSPR from creator to assignee`);
+        // Mark payment as pending immediately and open transfer link
+        console.log(`💸 Opening transfer page for payment: ${paymentCSPR} CSPR from creator to assignee`);
         console.log(`   Sender: ${walletAddr}`);
         console.log(`   Recipient: ${task.assigned_to}`);
         console.log(`   Amount (motes): ${task.payment_amount}`);
         
-        // Ensure wallet is synced before transfer - CRITICAL
-        console.log("🔄 Syncing wallet connection...");
-        connectWithPublicKey(walletAddr);
-        console.log("✅ Wallet connection synced");
+        // Generate a pending payment identifier (will be updated when actual tx completes)
+        // Use timestamp + task ID to create a unique pending identifier
+        const pendingPaymentId = `pending-${Date.now()}-${task.id}`;
         
-        // Small delay to ensure wallet is ready
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
-        setLoadingMessage(`Opening Casper Wallet to sign transfer...`);
-        
-        // Initiate transfer (transferCSPR will open the transfer page if needed)
-        console.log("🚀 Calling transferCSPR...");
-        const paymentResult = await transferCSPR({
-          recipientAddress: task.assigned_to,
-          amountMotes: task.payment_amount,
-          openWalletUI: true  // Let transferCSPR handle opening the URL once
-        });
-        
-        console.log(`✅ Payment transferred to assignee: ${paymentResult.txHash}`);
-        addToast("Success", `Payment initiated! ${paymentCSPR} CSPR transfer transaction: ${formatAddress(paymentResult.txHash, 10, 8)}`, "success");
-        
-        // Save payment transaction hash to task
-        console.log(`💾 Saving payment_tx_hash: ${paymentResult.txHash}`);
+        // Mark payment as pending immediately (this hides the Make Payment button)
+        console.log(`💾 Marking payment as pending: ${pendingPaymentId}`);
         await upsertTask({
           ...task,
-          payment_tx_hash: paymentResult.txHash
+          payment_tx_hash: pendingPaymentId  // Mark as pending to hide button
         });
         
-        // Refresh circle data to update UI (with a small delay to ensure DB is updated)
+        // Open transfer page immediately
+        const transferUrl = `https://testnet.cspr.live/transfer`;
+        window.open(transferUrl, '_blank', 'noopener,noreferrer');
+        console.log(`📂 Opened transfer page: ${transferUrl}`);
+        
+        // Show success message
+        addToast("Success", `Transfer page opened. Complete the payment of ${paymentCSPR} CSPR to ${formatAddress(task.assigned_to, 6, 4)} in the Casper Wallet.`, "success");
+        
+        // Refresh circle data to update UI (hide Make Payment button)
         if (circle?.id) {
-          await new Promise(resolve => setTimeout(resolve, 500));
           await refreshCircleData(circle.id);
-          console.log(`✅ Circle data refreshed after payment`);
+          console.log(`✅ Circle data refreshed - Make Payment button hidden`);
         }
       }
     } catch (paymentErr) {
