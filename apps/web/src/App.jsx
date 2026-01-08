@@ -481,32 +481,44 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
   
   // Check if this is a money request - handle different data types (number, string, boolean)
   const requestMoneyValue = task.request_money;
+  // More robust check for request_money - handle all possible values
   const isRequestMoney = requestMoneyValue === 1 || 
                          requestMoneyValue === true || 
                          requestMoneyValue === "1" || 
-                         String(requestMoneyValue).toLowerCase() === "true";
+                         String(requestMoneyValue).toLowerCase() === "true" ||
+                         Number(requestMoneyValue) === 1;
   
   // Allow completion/accept/reject if:
   // 1. Task is not completed
   // 2. User is the assignee
   // 3. Wallet is connected (required for on-chain operations)
-  const canComplete = !task.completed && isAssignee && !isRequestMoney; // Regular tasks only
-  const canAcceptReject = !task.completed && isAssignee && isRequestMoney; // Money requests only
+  // For Money Requests: show Accept and Reject buttons ONLY
+  // For Task Requests: show Complete Task button ONLY
+  // These must be mutually exclusive
+  const canAcceptReject = !task.completed && isAssignee && walletAddr && isRequestMoney; // Money requests only - assignee can accept/reject
+  const canComplete = !task.completed && isAssignee && walletAddr && !isRequestMoney; // Task requests only - assignee can complete
   
   // Debug logging (remove in production)
   if (process.env.NODE_ENV === 'development') {
-    console.log(`[TaskCard ${task.id}]`, {
+    console.log(`[TaskCard ${task.id}] Button Display Logic:`, {
+      taskId: task.id,
+      taskTitle: task.title,
+      request_money_raw: task.request_money,
+      request_money_type: typeof task.request_money,
+      requestMoneyValue,
+      isRequestMoney,
       walletAddr: walletAddrNormalized?.substring(0, 10) + "..." || "not set",
       assignedTo: assignedToNormalized?.substring(0, 10) + "..." || "not set",
       createdBy: createdByNormalized?.substring(0, 10) + "..." || "not set",
       isAssigned,
       isAssignee,
       isCreator,
-      isRequestMoney,
       completed: task.completed,
       canComplete,
       canAcceptReject,
-      hasWalletAddr: !!walletAddr
+      hasWalletAddr: !!walletAddr,
+      willShowCompleteTask: canComplete,
+      willShowAcceptReject: canAcceptReject
     });
   }
   // Show "Make Payment" button to creator for completed task requests (not money requests) with payment
@@ -794,16 +806,7 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
           )}
         </div>
 
-        {canComplete && (
-          <button
-            className="btn btn-success btn-sm"
-            onClick={() => onComplete(task)}
-            disabled={busy}
-          >
-            {busy ? "Signing..." : "✓ Complete Task"}
-          </button>
-        )}
-
+        {/* Money Requests: Show Accept and Reject buttons */}
         {canAcceptReject && (
           <div style={{ display: "flex", gap: "8px" }}>
             <button
@@ -827,6 +830,17 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
               {busy ? "Processing..." : "✗ Reject"}
             </button>
           </div>
+        )}
+
+        {/* Task Requests: Show Complete Task button (only if NOT a money request) */}
+        {canComplete && !canAcceptReject && (
+          <button
+            className="btn btn-success btn-sm"
+            onClick={() => onComplete(task)}
+            disabled={busy}
+          >
+            {busy ? "Signing..." : "✓ Complete Task"}
+          </button>
         )}
 
         {canMakePayment && (
@@ -3007,7 +3021,7 @@ export default function App() {
                     <div>
                       <h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "8px", color: "var(--text-primary)" }}>👥 Member Management</h4>
                       <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
-                        <li>Only circle owners can add new members</li>
+                        <li>Any member with a connected wallet can add new members</li>
                         <li>Verify member addresses before adding</li>
                         <li>Members can update their own profile names</li>
                         <li>Check member status in the Circle section</li>
@@ -3178,7 +3192,7 @@ export default function App() {
               <div className="members-section">
                 <div className="members-header">
                   <span className="members-title">Members ({members.length})</span>
-                  {walletAddr.toLowerCase() === circle.owner?.toLowerCase() && (
+                  {walletAddr && (
                 <button
                       className="btn btn-secondary btn-sm"
                       onClick={() => setShowAddMember(true)}
