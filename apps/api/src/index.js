@@ -895,7 +895,8 @@ app.get("/circles/:id/tasks", (req, res) => {
   res.json(tasks.map(t => ({
     ...t,
     completed: !!t.completed,
-    request_money: t.request_money ?? 0 // Ensure request_money is always a number (0 or 1)
+    request_money: t.request_money ?? 0, // Ensure request_money is always a number (0 or 1)
+    payment_tx_hash: t.payment_tx_hash || null // Ensure payment_tx_hash is null if empty/undefined
   })));
 });
 
@@ -923,6 +924,7 @@ app.get("/tasks/:id", (req, res) => {
   if (task) {
     task.completed = !!task.completed;
     task.request_money = task.request_money ?? 0; // Ensure request_money is always a number (0 or 1)
+    task.payment_tx_hash = task.payment_tx_hash || null; // Ensure payment_tx_hash is null if empty/undefined
   }
   res.json(task ?? null);
 });
@@ -952,7 +954,8 @@ app.get("/tasks/assigned/:address", (req, res) => {
   res.json(tasks.map(t => ({
     ...t,
     completed: !!t.completed,
-    request_money: t.request_money ?? 0 // Ensure request_money is always a number (0 or 1)
+    request_money: t.request_money ?? 0, // Ensure request_money is always a number (0 or 1)
+    payment_tx_hash: t.payment_tx_hash || null // Ensure payment_tx_hash is null if empty/undefined
   })));
 });
 

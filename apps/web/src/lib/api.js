@@ -5,7 +5,7 @@
  * The API serves as a fast cache for the UI - the blockchain is the source of truth.
  */
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3005";
+export const API = import.meta.env.VITE_API_URL || "http://localhost:3005";
 
 /**
  * Helper function for API requests

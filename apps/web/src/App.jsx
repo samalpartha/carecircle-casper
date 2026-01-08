@@ -19,6 +19,7 @@ import {
   checkAndUpdateAccountStatus
 } from "./lib/casper.js";
 import {
+  API,
   upsertCircle,
   upsertTask,
   fetchTasks,
@@ -510,7 +511,18 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
   }
   // Show "Make Payment" button to creator for completed task requests (not money requests) with payment
   // Hide button if payment_tx_hash exists (payment already made) or if it's a money request
-  const canMakePayment = task.completed && isCreator && !isRequestMoney && task.payment_amount && task.payment_amount.trim() !== "" && task.payment_amount !== "0" && !task.payment_tx_hash;
+  // Check if payment_tx_hash exists and is not empty/null
+  const hasPaymentTxHash = task.payment_tx_hash && 
+                            String(task.payment_tx_hash).trim() !== "" && 
+                            String(task.payment_tx_hash).toLowerCase() !== "null" &&
+                            String(task.payment_tx_hash).toLowerCase() !== "undefined";
+  const canMakePayment = task.completed && 
+                         isCreator && 
+                         !isRequestMoney && 
+                         task.payment_amount && 
+                         task.payment_amount.trim() !== "" && 
+                         task.payment_amount !== "0" && 
+                         !hasPaymentTxHash;
 
   const priorityLabels = ["Low", "Medium", "High", "Urgent"];
   const priorityColors = ["#71717a", "#eab308", "#f97316", "#ef4444"];
@@ -579,7 +591,7 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
           </span>
           {task.completed ? (
             <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-              ({task.payment_tx_hash 
+              ({hasPaymentTxHash 
                 ? (task.request_money ? "Paid by assignee" : "Paid") 
                 : (task.request_money 
                   ? (task.rejected === 1 || task.rejected === true ? "Rejected by assignee" : "Accepted - payment pending")
@@ -2621,7 +2633,7 @@ export default function App() {
               <div style={{ marginBottom: "32px" }}>
                 <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>Quick Links</h3>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
-                  <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                  <a href={`${API}/docs`} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
                     📚 API Documentation
                   </a>
                   <a href="https://testnet.cspr.live" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
@@ -2647,7 +2659,7 @@ export default function App() {
                     <p style={{ marginBottom: "12px" }}>
                       Access the interactive Swagger API documentation to explore all available endpoints, request/response schemas, and test API calls.
                     </p>
-                    <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
+                    <a href={`${API}/docs`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
                       Open Swagger UI →
                     </a>
                   </div>
@@ -2689,7 +2701,7 @@ export default function App() {
                       <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
                         <li>Verify you have sufficient CSPR tokens for gas fees</li>
                         <li>Check your internet connection and try again</li>
-                        <li>Ensure the API server is running (localhost:3005)</li>
+                        <li>Ensure the API server is running ({API.replace(/^https?:\/\//, '')})</li>
                         <li>Review transaction details in the Casper Explorer</li>
                       </ul>
                     </div>
@@ -2720,7 +2732,7 @@ export default function App() {
                     <div>
                       <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>API Server</div>
                       <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                        {window.location.hostname === "localhost" ? "localhost:3005" : "Production"}
+                        {API.replace(/^https?:\/\//, '')}
                       </div>
                     </div>
                     <div>
@@ -2896,7 +2908,7 @@ export default function App() {
               <div style={{ marginBottom: "32px" }}>
                 <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>Quick Links</h3>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
-                  <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                  <a href={`${API}/docs`} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
                     📚 API Documentation
                   </a>
                   <a href="https://testnet.cspr.live" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
@@ -2922,7 +2934,7 @@ export default function App() {
                     <p style={{ marginBottom: "12px" }}>
                       Access the interactive Swagger API documentation to explore all available endpoints, request/response schemas, and test API calls.
                     </p>
-                    <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
+                    <a href={`${API}/docs`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
                       Open Swagger UI →
                     </a>
                   </div>
@@ -3005,7 +3017,7 @@ export default function App() {
                       <h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "8px", color: "var(--text-primary)" }}>📊 Data Not Updating</h4>
                       <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
                         <li>Refresh the page to reload data from the API</li>
-                        <li>Check API server connection (localhost:3005)</li>
+                        <li>Check API server connection ({API.replace(/^https?:\/\//, '')})</li>
                         <li>Verify blockchain transactions completed successfully</li>
                         <li>Wait a few seconds for on-chain data to sync</li>
                       </ul>
@@ -3028,7 +3040,7 @@ export default function App() {
                     <div>
                       <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>API Server</div>
                       <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                        {window.location.hostname === "localhost" ? "localhost:3005" : "Production"}
+                        {API.replace(/^https?:\/\//, '')}
                       </div>
                     </div>
                     <div>
