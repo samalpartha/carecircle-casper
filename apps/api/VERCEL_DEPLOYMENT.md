@@ -32,11 +32,13 @@ The API is configured to use SQLite in `/tmp` directory, which means:
    - Select your repository
 
 2. **Configure Project Settings**
-   - **Root Directory**: `apps/api`
+   - **Root Directory**: `apps/api` ⚠️ **IMPORTANT: Must be exactly `apps/api`**
    - **Framework Preset**: Other
    - **Build Command**: Leave empty (or `npm install`)
    - **Output Directory**: Leave empty
    - **Install Command**: `npm install`
+   
+   ⚠️ **Critical**: The Root Directory must be set to `apps/api`, not the repository root!
 
 3. **Set Environment Variables**
    - `DB_FILE`: `/tmp/carecircle-application.db` (optional, defaults to this)

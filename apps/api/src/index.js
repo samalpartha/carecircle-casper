@@ -1507,8 +1507,10 @@ function seedDemoData() {
   }
 }
 
-// Seed demo data on startup
-seedDemoData();
+// Seed demo data on startup (skip in Vercel to avoid cold start delays)
+if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+  seedDemoData();
+}
 
 // ==================== Start Server ====================
 
