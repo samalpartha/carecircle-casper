@@ -11,7 +11,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const db = openDb(process.env.DB_FILE || "carecircle-application.db");
+// Use /tmp for Vercel (only writable location), or custom path from env, or default
+const dbFilename = process.env.VERCEL || process.env.VERCEL_ENV
+  ? (process.env.DB_FILE || "/tmp/carecircle-application.db")
+  : (process.env.DB_FILE || "carecircle-application.db");
+const db = openDb(dbFilename);
 
 // ==================== Swagger Setup ====================
 
@@ -1508,9 +1512,14 @@ seedDemoData();
 
 // ==================== Start Server ====================
 
-const port = Number(process.env.PORT || 3005);
-app.listen(port, () => {
-  console.log(`
+// Export app for Vercel serverless functions
+export default app;
+
+// Only start listening if not in serverless environment
+if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+  const port = Number(process.env.PORT || 3005);
+  app.listen(port, () => {
+    console.log(`
 ╔═══════════════════════════════════════════════════════════════╗
 ║  CareCircle API Server                                        ║
 ║  Casper Hackathon 2026                                        ║
@@ -1519,5 +1528,6 @@ app.listen(port, () => {
 ║  URL:     http://localhost:${port.toString().padEnd(37)}║
 ║  Health:  http://localhost:${port}/health${" ".repeat(27)}║
 ╚═══════════════════════════════════════════════════════════════╝
-  `);
-});
+    `);
+  });
+}

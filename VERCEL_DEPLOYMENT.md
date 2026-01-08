@@ -78,15 +78,22 @@ This guide explains how to deploy CareCircle to Vercel from Git.
 
 ### API Server Deployment
 
-The frontend requires a separate API server. You have two options:
+The frontend requires a separate API server. You have three options:
 
-1. **Use Existing API** (Recommended)
+1. **Deploy API to Vercel** (Recommended for simplicity)
+   - The API is configured for Vercel serverless functions
+   - Deploy from `apps/api` directory
+   - See `apps/api/VERCEL_DEPLOYMENT.md` for detailed instructions
+   - Set `VITE_API_URL` to your Vercel API URL
+
+2. **Use Existing API** (Alternative)
    - If your API is already deployed (e.g., Google Cloud Run)
    - Set `VITE_API_URL` to that URL in Vercel environment variables
 
-2. **Deploy API to Vercel Serverless Functions** (Future)
-   - The API can be converted to Vercel serverless functions
-   - This would require refactoring `apps/api` to use Vercel's function format
+3. **Deploy Both Together** (Advanced)
+   - Deploy frontend from root directory
+   - Deploy API as a separate Vercel project from `apps/api`
+   - Link them via environment variables
 
 ### Environment Variables
 

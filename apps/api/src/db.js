@@ -1,7 +1,11 @@
 import Database from "better-sqlite3";
 
 export function openDb(filename = "carecircle-application.db") {
-  const db = new Database(filename);
+  // Use /tmp directory for Vercel serverless functions (only writable location)
+  const dbPath = process.env.VERCEL || process.env.VERCEL_ENV 
+    ? `/tmp/${filename}`
+    : filename;
+  const db = new Database(dbPath);
   
   // Enable WAL mode for better performance
   db.exec(`PRAGMA journal_mode = WAL;`);
