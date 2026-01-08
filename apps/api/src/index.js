@@ -7,7 +7,7 @@ import { openDb } from "./db.js";
 import nodemailer from "nodemailer";
 import crypto from "node:crypto";
 import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import { dirname, join, isAbsolute } from "path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -19,12 +19,17 @@ app.use(express.json());
 // Determine database filename based on environment
 let db;
 try {
+  // If DB_FILE is set and is an absolute path, use it directly
+  // Otherwise, pass just the filename and let db.js handle the path
   let dbFilename;
-  if (process.env.VERCEL || process.env.VERCEL_ENV) {
+  if (process.env.DB_FILE && isAbsolute(process.env.DB_FILE)) {
+    // Full path provided, use it directly
+    dbFilename = process.env.DB_FILE;
+  } else if (process.env.VERCEL || process.env.VERCEL_ENV) {
     // Vercel: Just filename, db.js will handle /tmp path
-    dbFilename = "carecircle-application.db";
+    dbFilename = process.env.DB_FILE || "carecircle-application.db";
   } else if (process.env.RAILWAY || process.env.RAILWAY_ENVIRONMENT) {
-    // Railway: Use DB_FILE env var or default to /app/data
+    // Railway: Just filename, db.js will handle /app/data path
     dbFilename = process.env.DB_FILE || "carecircle-application.db";
   } else {
     // Local or other platforms: Use DB_FILE env var or default
@@ -1588,7 +1593,7 @@ function seedDemoData() {
 }
 
 // Seed demo data on startup (skip in Vercel to avoid cold start delays)
-if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+if (db && process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
   seedDemoData();
 }
 

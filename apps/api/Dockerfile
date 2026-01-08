@@ -26,7 +26,7 @@ EXPOSE 3005
 # Set default environment variables
 ENV PORT=3005
 ENV NODE_ENV=production
-ENV DB_FILE=/app/data/carecircle-application.db
+# Don't set DB_FILE here - let the code handle the path based on environment
 
 # Start the server
 CMD ["node", "src/index.js"]

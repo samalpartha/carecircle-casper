@@ -6,7 +6,15 @@ export function openDb(filename = "carecircle-application.db") {
   try {
     // Determine database path based on environment
     let dbPath;
-    if (process.env.VERCEL || process.env.VERCEL_ENV) {
+    
+    // If filename is already an absolute path, use it directly
+    if (path.isAbsolute(filename)) {
+      const dir = path.dirname(filename);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      dbPath = filename;
+    } else if (process.env.VERCEL || process.env.VERCEL_ENV) {
       // Vercel: Use /tmp (ephemeral)
       const tmpDir = "/tmp";
       if (!fs.existsSync(tmpDir)) {
@@ -22,7 +30,7 @@ export function openDb(filename = "carecircle-application.db") {
       dbPath = path.join(dataDir, filename);
     } else {
       // Local development or other platforms
-      dbPath = process.env.DB_FILE || filename;
+      dbPath = filename;
     }
     
     console.log(`[DB] Opening database at: ${dbPath}`);
