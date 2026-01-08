@@ -1,0 +1,14 @@
+node_modules
+.git
+.env.local
+.env.*.local
+apps/api
+contracts
+keys
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+dist
+.vite
+
