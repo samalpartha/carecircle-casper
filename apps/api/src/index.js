@@ -30,9 +30,7 @@ try {
     dbFilename = process.env.DB_FILE || "carecircle-application.db";
   } else if (process.env.RAILWAY || process.env.RAILWAY_ENVIRONMENT) {
     // Railway: Just filename, db.js will handle /app/data path
-    // IMPORTANT: Ensure a volume is mounted at /app/data in Railway for persistence
     dbFilename = process.env.DB_FILE || "carecircle-application.db";
-    console.log(`[API] Railway environment detected. Database will use /app/data (ensure volume is mounted)`);
   } else {
     // Local or other platforms: Use DB_FILE env var or default
     dbFilename = process.env.DB_FILE || "carecircle-application.db";
@@ -896,7 +894,8 @@ app.get("/circles/:id/tasks", (req, res) => {
   // Normalize types for UI
   res.json(tasks.map(t => ({
     ...t,
-    completed: !!t.completed
+    completed: !!t.completed,
+    request_money: t.request_money ?? 0 // Ensure request_money is always a number (0 or 1)
   })));
 });
 
@@ -923,6 +922,7 @@ app.get("/tasks/:id", (req, res) => {
   const task = db.prepare("SELECT * FROM tasks WHERE id=?").get(id);
   if (task) {
     task.completed = !!task.completed;
+    task.request_money = task.request_money ?? 0; // Ensure request_money is always a number (0 or 1)
   }
   res.json(task ?? null);
 });
@@ -948,9 +948,11 @@ app.get("/tasks/:id", (req, res) => {
 app.get("/tasks/assigned/:address", (req, res) => {
   const address = req.params.address;
   const tasks = db.prepare("SELECT * FROM tasks WHERE assigned_to=? ORDER BY completed ASC, priority DESC, id DESC").all(address);
+  // Normalize types for UI
   res.json(tasks.map(t => ({
     ...t,
-    completed: !!t.completed
+    completed: !!t.completed,
+    request_money: t.request_money ?? 0 // Ensure request_money is always a number (0 or 1)
   })));
 });
 

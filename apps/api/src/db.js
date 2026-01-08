@@ -23,19 +23,11 @@ export function openDb(filename = "carecircle-application.db") {
       dbPath = path.join(tmpDir, filename);
     } else if (process.env.RAILWAY || process.env.RAILWAY_ENVIRONMENT) {
       // Railway: Use persistent volume or data directory
-      // IMPORTANT: Mount a volume at /app/data in Railway dashboard for data persistence
       const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || "/app/data";
-      
-      // Check if directory exists (will exist if volume is mounted)
       if (!fs.existsSync(dataDir)) {
-        console.warn(`[DB] Warning: ${dataDir} does not exist. Creating directory (data may not persist without volume).`);
         fs.mkdirSync(dataDir, { recursive: true });
-      } else {
-        console.log(`[DB] Using persistent volume at: ${dataDir}`);
       }
-      
       dbPath = path.join(dataDir, filename);
-      console.log(`[DB] Railway database path: ${dbPath}`);
     } else {
       // Local development or other platforms
       dbPath = filename;

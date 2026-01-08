@@ -477,7 +477,13 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
   const isAssigned = assignedToNormalized !== "";
   const isAssignee = isAssigned && walletAddrNormalized && walletAddrNormalized === assignedToNormalized;
   const isCreator = walletAddrNormalized && walletAddrNormalized === createdByNormalized;
-  const isRequestMoney = task.request_money === 1 || task.request_money === true;
+  
+  // Check if this is a money request - handle different data types (number, string, boolean)
+  const requestMoneyValue = task.request_money;
+  const isRequestMoney = requestMoneyValue === 1 || 
+                         requestMoneyValue === true || 
+                         requestMoneyValue === "1" || 
+                         String(requestMoneyValue).toLowerCase() === "true";
   
   // Allow completion/accept/reject if:
   // 1. Task is not completed
@@ -1824,7 +1830,12 @@ export default function App() {
       return addToast("Error", "No payment amount specified", "error");
     }
     
-    const isRequestMoney = task.request_money === 1 || task.request_money === true;
+    // Check if this is a money request - handle different data types
+    const requestMoneyValue = task.request_money;
+    const isRequestMoney = requestMoneyValue === 1 || 
+                           requestMoneyValue === true || 
+                           requestMoneyValue === "1" || 
+                           String(requestMoneyValue).toLowerCase() === "true";
     const isCreator = walletAddr.toLowerCase() === task.created_by?.toLowerCase();
     
     if (isRequestMoney) {
@@ -1975,7 +1986,12 @@ export default function App() {
       let paymentMsg = "";
       if (task.payment_amount && task.payment_amount.trim() !== "" && task.payment_amount !== "0") {
         const paymentCSPR = (parseFloat(task.payment_amount) / 1_000_000_000).toFixed(2);
-        const isRequestMoney = task.request_money === 1 || task.request_money === true;
+        // Check if this is a money request - handle different data types
+        const requestMoneyValue = task.request_money;
+        const isRequestMoney = requestMoneyValue === 1 || 
+                               requestMoneyValue === true || 
+                               requestMoneyValue === "1" || 
+                               String(requestMoneyValue).toLowerCase() === "true";
         
         console.log(`💰 Processing payment: ${paymentCSPR} CSPR, request_money: ${isRequestMoney}`);
         console.log(`   Current user: ${formatAddress(walletAddr)}`);
@@ -2229,7 +2245,12 @@ export default function App() {
   // ==================== Filtered Data ====================
   const filteredTasks = tasks
     .filter((t) => {
-      const isRequestMoney = t.request_money === 1 || t.request_money === true;
+      // Check if this is a money request - handle different data types
+      const requestMoneyValue = t.request_money;
+      const isRequestMoney = requestMoneyValue === 1 || 
+                             requestMoneyValue === true || 
+                             requestMoneyValue === "1" || 
+                             String(requestMoneyValue).toLowerCase() === "true";
       
       // Status filters
     if (filter === "open") return !t.completed;
