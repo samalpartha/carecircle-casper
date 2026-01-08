@@ -252,7 +252,7 @@ function HelpPanel({ activeTab, setActiveTab, maxHeight }) {
                   <li>Transfer page opens automatically</li>
                   <li>Complete the payment transfer to the requester</li>
                   <li>Sign the transaction in your Casper Wallet</li>
-                  <li>Request shows as "Accepted - payment pending" until payment is confirmed</li>
+                  <li>Request shows as "Accepted - payment Completed" when accepted</li>
                 </ol>
               </div>
 
@@ -637,7 +637,7 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
                   return task.request_money ? "(Paid by assignee)" : "(Paid)";
                 }
                 if (task.request_money) {
-                  return (task.rejected === 1 || task.rejected === true) ? "(Rejected by assignee)" : "(Accepted - payment pending)";
+                  return (task.rejected === 1 || task.rejected === true) ? "(Rejected by assignee)" : "(Accepted - payment Completed)";
                 }
                 return "(Payment pending)";
               })()}
