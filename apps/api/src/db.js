@@ -1,10 +1,52 @@
 import Database from "better-sqlite3";
+import fs from "fs";
+import path from "path";
 
 export function openDb(filename = "carecircle-application.db") {
-  const db = new Database(filename);
-  
-  // Enable WAL mode for better performance
-  db.exec(`PRAGMA journal_mode = WAL;`);
+  try {
+    // Determine database path based on environment
+    let dbPath;
+    
+    // If filename is already an absolute path, use it directly
+    if (path.isAbsolute(filename)) {
+      const dir = path.dirname(filename);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      dbPath = filename;
+    } else if (process.env.VERCEL || process.env.VERCEL_ENV) {
+      // Vercel: Use /tmp (ephemeral)
+      const tmpDir = "/tmp";
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+      dbPath = path.join(tmpDir, filename);
+    } else if (process.env.RAILWAY || process.env.RAILWAY_ENVIRONMENT) {
+      // Railway: Use persistent volume or data directory
+      const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || "/app/data";
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      dbPath = path.join(dataDir, filename);
+    } else {
+      // Local development or other platforms
+      dbPath = filename;
+    }
+    
+    console.log(`[DB] Opening database at: ${dbPath}`);
+    const db = new Database(dbPath);
+    
+    // Configure SQLite for serverless environment
+    if (process.env.VERCEL || process.env.VERCEL_ENV) {
+      // In Vercel, use DELETE journal mode (more reliable for ephemeral storage)
+      db.exec(`PRAGMA journal_mode = DELETE;`);
+      db.exec(`PRAGMA synchronous = NORMAL;`);
+      console.log(`[DB] Configured for Vercel serverless environment`);
+    } else {
+      // Local development: use WAL mode for better performance
+      db.exec(`PRAGMA journal_mode = WAL;`);
+      db.exec(`PRAGMA synchronous = NORMAL;`);
+    }
   
   // Create tables
   db.exec(`
@@ -226,5 +268,10 @@ export function openDb(filename = "carecircle-application.db") {
     CREATE INDEX IF NOT EXISTS idx_invitations_status ON invitations(status);
   `);
   
-  return db;
+    console.log(`[DB] Database initialized successfully`);
+    return db;
+  } catch (error) {
+    console.error(`[DB] Failed to open database:`, error);
+    throw new Error(`Database initialization failed: ${error.message}`);
+  }
 }

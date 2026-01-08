@@ -19,6 +19,7 @@ import {
   checkAndUpdateAccountStatus
 } from "./lib/casper.js";
 import {
+  API,
   upsertCircle,
   upsertTask,
   fetchTasks,
@@ -135,7 +136,7 @@ function HelpPanel({ activeTab, setActiveTab, maxHeight }) {
                   <ol className="get-started-list">
                     <li>Connect your wallet (or use demo mode)</li>
                     <li>Create a new circle or load an existing one</li>
-                    <li>Add members to your circle</li>
+                <li>Add members to your circle</li>
                     <li>Create task requests or money requests</li>
                     <li>Complete tasks or accept/reject money requests</li>
                     <li>Payments are processed automatically with on-chain verification</li>
@@ -251,7 +252,7 @@ function HelpPanel({ activeTab, setActiveTab, maxHeight }) {
                   <li>Transfer page opens automatically</li>
                   <li>Complete the payment transfer to the requester</li>
                   <li>Sign the transaction in your Casper Wallet</li>
-                  <li>Request shows as "Accepted - payment pending" until payment is confirmed</li>
+                  <li>Request shows as "Accepted - payment Completed" when accepted</li>
                 </ol>
               </div>
 
@@ -464,15 +465,101 @@ function StatCard({ icon, value, label }) {
 
 // ==================== Task Card ====================
 function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePayment, onReject, members = [], mainPurseUref = null, addToast = () => {} }) {
-  const isAssigned = task.assigned_to && task.assigned_to.trim() !== "";
-  const isAssignee = isAssigned && walletAddr?.toLowerCase() === task.assigned_to?.toLowerCase();
-  const isCreator = walletAddr?.toLowerCase() === task.created_by?.toLowerCase();
-  const isRequestMoney = task.request_money === 1 || task.request_money === true;
-  const canComplete = !task.completed && isAssignee && !isRequestMoney; // Regular tasks only
-  const canAcceptReject = !task.completed && isAssignee && isRequestMoney; // Money requests only
+  // Normalize addresses for comparison (trim and lowercase)
+  const normalizeAddress = (addr) => {
+    if (!addr) return "";
+    return String(addr).trim().toLowerCase();
+  };
+  
+  const walletAddrNormalized = normalizeAddress(walletAddr);
+  const assignedToNormalized = normalizeAddress(task.assigned_to);
+  const createdByNormalized = normalizeAddress(task.created_by);
+  
+  const isAssigned = assignedToNormalized !== "";
+  const isAssignee = isAssigned && walletAddrNormalized && walletAddrNormalized === assignedToNormalized;
+  const isCreator = walletAddrNormalized && walletAddrNormalized === createdByNormalized;
+  
+  // Check if this is a money request - handle different data types (number, string, boolean)
+  const requestMoneyValue = task.request_money;
+  // More robust check for request_money - handle all possible values
+  const isRequestMoney = requestMoneyValue === 1 || 
+                         requestMoneyValue === true || 
+                         requestMoneyValue === "1" || 
+                         String(requestMoneyValue).toLowerCase() === "true" ||
+                         Number(requestMoneyValue) === 1;
+  
+  // Allow completion/accept/reject if:
+  // 1. Task is not completed
+  // 2. User is the assignee
+  // 3. Wallet is connected (required for on-chain operations)
+  // For Money Requests: show Accept and Reject buttons ONLY
+  // For Task Requests: show Complete Task button ONLY
+  // These must be mutually exclusive
+  const canAcceptReject = !task.completed && isAssignee && walletAddr && isRequestMoney; // Money requests only - assignee can accept/reject
+  const canComplete = !task.completed && isAssignee && walletAddr && !isRequestMoney; // Task requests only - assignee can complete
+  
+  // Debug logging (remove in production)
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[TaskCard ${task.id}] Button Display Logic:`, {
+      taskId: task.id,
+      taskTitle: task.title,
+      request_money_raw: task.request_money,
+      request_money_type: typeof task.request_money,
+      requestMoneyValue,
+      isRequestMoney,
+      walletAddr: walletAddrNormalized?.substring(0, 10) + "..." || "not set",
+      assignedTo: assignedToNormalized?.substring(0, 10) + "..." || "not set",
+      createdBy: createdByNormalized?.substring(0, 10) + "..." || "not set",
+      isAssigned,
+      isAssignee,
+      isCreator,
+      completed: task.completed,
+      canComplete,
+      canAcceptReject,
+      hasWalletAddr: !!walletAddr,
+      willShowCompleteTask: canComplete,
+      willShowAcceptReject: canAcceptReject
+    });
+  }
   // Show "Make Payment" button to creator for completed task requests (not money requests) with payment
   // Hide button if payment_tx_hash exists (payment already made) or if it's a money request
-  const canMakePayment = task.completed && isCreator && !isRequestMoney && task.payment_amount && task.payment_amount.trim() !== "" && task.payment_amount !== "0" && !task.payment_tx_hash;
+  // Check if payment_tx_hash exists and is not empty/null
+  // More robust check to handle all edge cases
+  const paymentTxHash = task.payment_tx_hash;
+  const hasPaymentTxHash = paymentTxHash !== null && 
+                            paymentTxHash !== undefined &&
+                            String(paymentTxHash).trim() !== "" && 
+                            String(paymentTxHash).toLowerCase() !== "null" &&
+                            String(paymentTxHash).toLowerCase() !== "undefined" &&
+                            String(paymentTxHash).toLowerCase() !== "0";
+  
+  // Only show Make Payment if:
+  // 1. Task is completed
+  // 2. User is the creator
+  // 3. It's NOT a money request (money requests don't have Make Payment for creator)
+  // 4. Payment amount exists and is not zero
+  // 5. Payment has NOT been made yet (no payment_tx_hash)
+  const canMakePayment = task.completed && 
+                         isCreator && 
+                         !isRequestMoney && 
+                         task.payment_amount && 
+                         String(task.payment_amount).trim() !== "" && 
+                         String(task.payment_amount) !== "0" && 
+                         !hasPaymentTxHash;
+  
+  // Debug logging for payment button
+  if (process.env.NODE_ENV === 'development' && task.completed && isCreator && !isRequestMoney && task.payment_amount) {
+    console.log(`[TaskCard ${task.id}] Make Payment Button Logic:`, {
+      taskId: task.id,
+      completed: task.completed,
+      isCreator,
+      isRequestMoney,
+      payment_amount: task.payment_amount,
+      payment_tx_hash: task.payment_tx_hash,
+      hasPaymentTxHash,
+      canMakePayment
+    });
+  }
 
   const priorityLabels = ["Low", "Medium", "High", "Urgent"];
   const priorityColors = ["#71717a", "#eab308", "#f97316", "#ef4444"];
@@ -541,11 +628,19 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
           </span>
           {task.completed ? (
             <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-              ({task.payment_tx_hash 
-                ? (task.request_money ? "Paid by assignee" : "Paid") 
-                : (task.request_money 
-                  ? (task.rejected === 1 || task.rejected === true ? "Rejected by assignee" : "Accepted - payment pending")
-                  : (canMakePayment ? "Payment pending" : "Payment pending"))})
+              {(() => {
+                if (hasPaymentTxHash) {
+                  const txHash = String(task.payment_tx_hash);
+                  if (txHash.startsWith('pending-')) {
+                    return "(Payment initiated)";
+                  }
+                  return task.request_money ? "(Paid by assignee)" : "(Paid)";
+                }
+                if (task.request_money) {
+                  return (task.rejected === 1 || task.rejected === true) ? "(Rejected by assignee)" : "(Accepted - payment Completed)";
+                }
+                return "(Payment pending)";
+              })()}
             </span>
           ) : (
             <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
@@ -744,16 +839,7 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
           )}
         </div>
 
-        {canComplete && (
-          <button
-            className="btn btn-success btn-sm"
-            onClick={() => onComplete(task)}
-            disabled={busy}
-          >
-            {busy ? "Signing..." : "✓ Complete Task"}
-          </button>
-        )}
-
+        {/* Money Requests: Show Accept and Reject buttons */}
         {canAcceptReject && (
           <div style={{ display: "flex", gap: "8px" }}>
             <button
@@ -779,6 +865,17 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
           </div>
         )}
 
+        {/* Task Requests: Show Complete Task button (only if NOT a money request) */}
+        {canComplete && !canAcceptReject && (
+          <button
+            className="btn btn-success btn-sm"
+            onClick={() => onComplete(task)}
+            disabled={busy}
+          >
+            {busy ? "Signing..." : "✓ Complete Task"}
+          </button>
+        )}
+
         {canMakePayment && (
           <button
             className="btn btn-primary btn-sm"
@@ -791,10 +888,20 @@ function TaskCard({ task, onComplete, walletAddr, busy, onViewDetails, onMakePay
         )}
 
         {!task.completed && !isAssignee && walletAddr && isAssigned && (
-          <span className="text-xs text-muted">Only assignee can complete</span>
+          <span className="text-xs text-muted">
+            Only assignee can complete
+            {process.env.NODE_ENV === 'development' && (
+              <span style={{ display: "block", fontSize: "0.65rem", marginTop: "4px" }}>
+                Wallet: {walletAddrNormalized?.substring(0, 12)}... | Assigned: {assignedToNormalized?.substring(0, 12)}...
+              </span>
+            )}
+          </span>
         )}
         {!task.completed && !isAssigned && (
           <span className="text-xs text-muted">Task must be assigned before completion</span>
+        )}
+        {!task.completed && !walletAddr && (
+          <span className="text-xs text-muted">Connect wallet to complete tasks</span>
         )}
       </div>
     </div>
@@ -1769,6 +1876,11 @@ export default function App() {
   };
 
   const handleMakePayment = async (task) => {
+    // Prevent multiple simultaneous payment attempts
+    if (busy) {
+      return addToast("Info", "Payment is already being processed. Please wait...", "info");
+    }
+    
     if (!walletAddr) return addToast("Error", "Connect wallet first", "error");
     if (!task.completed) {
       return addToast("Error", "Task must be completed before making payment", "error");
@@ -1777,7 +1889,12 @@ export default function App() {
       return addToast("Error", "No payment amount specified", "error");
     }
     
-    const isRequestMoney = task.request_money === 1 || task.request_money === true;
+    // Check if this is a money request - handle different data types
+    const requestMoneyValue = task.request_money;
+    const isRequestMoney = requestMoneyValue === 1 || 
+                           requestMoneyValue === true || 
+                           requestMoneyValue === "1" || 
+                           String(requestMoneyValue).toLowerCase() === "true";
     const isCreator = walletAddr.toLowerCase() === task.created_by?.toLowerCase();
     
     if (isRequestMoney) {
@@ -1812,57 +1929,42 @@ export default function App() {
         addToast("Info", `Transfer page opened. Assignee (${formatAddress(task.assigned_to, 6, 4)}) needs to transfer ${paymentCSPR} CSPR to you (${formatAddress(task.created_by, 6, 4)}).`, "info");
       } else {
         // Regular task: creator pays assignee
-        // Initiate transfer from creator to assignee
-        setLoadingMessage(`Preparing transfer of ${paymentCSPR} CSPR...`);
-        console.log(`💸 Initiating transfer: ${paymentCSPR} CSPR from creator to assignee`);
+        // Mark payment as pending immediately and open transfer link
+        console.log(`💸 Opening transfer page for payment: ${paymentCSPR} CSPR from creator to assignee`);
         console.log(`   Sender: ${walletAddr}`);
         console.log(`   Recipient: ${task.assigned_to}`);
         console.log(`   Amount (motes): ${task.payment_amount}`);
         
-        // Ensure wallet is synced before transfer - CRITICAL
-        console.log("🔄 Syncing wallet connection...");
-        connectWithPublicKey(walletAddr);
-        console.log("✅ Wallet connection synced");
+        // Generate a pending payment identifier (will be updated when actual tx completes)
+        // Use timestamp + task ID to create a unique pending identifier
+        const pendingPaymentId = `pending-${Date.now()}-${task.id}`;
         
-        // Small delay to ensure wallet is ready
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
-        // Open transfer page
-        const transferUrl = `https://testnet.cspr.live/transfer`;
-        window.open(transferUrl, '_blank');
-        console.log(`📂 Opened transfer page: ${transferUrl}`);
-        
-        setLoadingMessage(`Opening Casper Wallet to sign transfer...`);
-        
-        // Initiate transfer which will open Casper Wallet
-        console.log("🚀 Calling transferCSPR...");
-        const paymentResult = await transferCSPR({
-          recipientAddress: task.assigned_to,
-          amountMotes: task.payment_amount,
-          openWalletUI: true
-        });
-        
-        console.log(`✅ Payment transferred to assignee: ${paymentResult.txHash}`);
-        addToast("Success", `Payment initiated! ${paymentCSPR} CSPR transfer transaction: ${formatAddress(paymentResult.txHash, 10, 8)}`, "success");
-        
-        // Save payment transaction hash to task
+        // Mark payment as pending immediately (this hides the Make Payment button)
+        console.log(`💾 Marking payment as pending: ${pendingPaymentId}`);
         await upsertTask({
           ...task,
-          payment_tx_hash: paymentResult.txHash
+          payment_tx_hash: pendingPaymentId  // Mark as pending to hide button
         });
         
-        // Refresh circle data to update UI
+        // Open transfer page immediately
+        const transferUrl = `https://testnet.cspr.live/transfer`;
+        window.open(transferUrl, '_blank', 'noopener,noreferrer');
+        console.log(`📂 Opened transfer page: ${transferUrl}`);
+        
+        // Show success message
+        addToast("Success", `Transfer page opened. Complete the payment of ${paymentCSPR} CSPR to ${formatAddress(task.assigned_to, 6, 4)} in the Casper Wallet.`, "success");
+        
+        // Refresh circle data to update UI (hide Make Payment button)
         if (circle?.id) {
           await refreshCircleData(circle.id);
+          console.log(`✅ Circle data refreshed - Make Payment button hidden`);
         }
       }
     } catch (paymentErr) {
       console.error("❌ Payment transfer failed:", paymentErr);
       console.error("   Error details:", paymentErr.message, paymentErr.stack);
       addToast("Error", `Payment transfer failed: ${paymentErr.message}. Please try again.`, "error");
-      // Still open transfer page as fallback
-      const transferUrl = `https://testnet.cspr.live/transfer`;
-      window.open(transferUrl, '_blank');
+      // Don't open transfer page again - it was already opened by transferCSPR
     } finally {
       setBusy(false);
       setLoadingMessage("");
@@ -1935,7 +2037,12 @@ export default function App() {
       let paymentMsg = "";
       if (task.payment_amount && task.payment_amount.trim() !== "" && task.payment_amount !== "0") {
         const paymentCSPR = (parseFloat(task.payment_amount) / 1_000_000_000).toFixed(2);
-        const isRequestMoney = task.request_money === 1 || task.request_money === true;
+        // Check if this is a money request - handle different data types
+        const requestMoneyValue = task.request_money;
+        const isRequestMoney = requestMoneyValue === 1 || 
+                               requestMoneyValue === true || 
+                               requestMoneyValue === "1" || 
+                               String(requestMoneyValue).toLowerCase() === "true";
         
         console.log(`💰 Processing payment: ${paymentCSPR} CSPR, request_money: ${isRequestMoney}`);
         console.log(`   Current user: ${formatAddress(walletAddr)}`);
@@ -2189,7 +2296,12 @@ export default function App() {
   // ==================== Filtered Data ====================
   const filteredTasks = tasks
     .filter((t) => {
-      const isRequestMoney = t.request_money === 1 || t.request_money === true;
+      // Check if this is a money request - handle different data types
+      const requestMoneyValue = t.request_money;
+      const isRequestMoney = requestMoneyValue === 1 || 
+                             requestMoneyValue === true || 
+                             requestMoneyValue === "1" || 
+                             String(requestMoneyValue).toLowerCase() === "true";
       
       // Status filters
     if (filter === "open") return !t.completed;
@@ -2560,7 +2672,7 @@ export default function App() {
               <div style={{ marginBottom: "32px" }}>
                 <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>Quick Links</h3>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
-                  <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                  <a href={`${API}/docs`} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
                     📚 API Documentation
                   </a>
                   <a href="https://testnet.cspr.live" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
@@ -2586,7 +2698,7 @@ export default function App() {
                     <p style={{ marginBottom: "12px" }}>
                       Access the interactive Swagger API documentation to explore all available endpoints, request/response schemas, and test API calls.
                     </p>
-                    <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
+                    <a href={`${API}/docs`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
                       Open Swagger UI →
                     </a>
                   </div>
@@ -2628,7 +2740,7 @@ export default function App() {
                       <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
                         <li>Verify you have sufficient CSPR tokens for gas fees</li>
                         <li>Check your internet connection and try again</li>
-                        <li>Ensure the API server is running (localhost:3005)</li>
+                        <li>Ensure the API server is running ({API.replace(/^https?:\/\//, '')})</li>
                         <li>Review transaction details in the Casper Explorer</li>
                       </ul>
                     </div>
@@ -2659,7 +2771,7 @@ export default function App() {
                     <div>
                       <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>API Server</div>
                       <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                        {window.location.hostname === "localhost" ? "localhost:3005" : "Production"}
+                        {API.replace(/^https?:\/\//, '')}
                       </div>
                     </div>
                     <div>
@@ -2835,7 +2947,7 @@ export default function App() {
               <div style={{ marginBottom: "32px" }}>
                 <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "16px", color: "var(--text-primary)" }}>Quick Links</h3>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
-                  <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
+                  <a href={`${API}/docs`} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
                     📚 API Documentation
                   </a>
                   <a href="https://testnet.cspr.live" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">
@@ -2861,7 +2973,7 @@ export default function App() {
                     <p style={{ marginBottom: "12px" }}>
                       Access the interactive Swagger API documentation to explore all available endpoints, request/response schemas, and test API calls.
                     </p>
-                    <a href="http://localhost:3005/docs" target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
+                    <a href={`${API}/docs`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", textDecoration: "underline" }}>
                       Open Swagger UI →
                     </a>
                   </div>
@@ -2934,7 +3046,7 @@ export default function App() {
                     <div>
                       <h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "8px", color: "var(--text-primary)" }}>👥 Member Management</h4>
                       <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
-                        <li>Only circle owners can add new members</li>
+                        <li>Any member with a connected wallet can add new members</li>
                         <li>Verify member addresses before adding</li>
                         <li>Members can update their own profile names</li>
                         <li>Check member status in the Circle section</li>
@@ -2944,7 +3056,7 @@ export default function App() {
                       <h4 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "8px", color: "var(--text-primary)" }}>📊 Data Not Updating</h4>
                       <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: "1.6" }}>
                         <li>Refresh the page to reload data from the API</li>
-                        <li>Check API server connection (localhost:3005)</li>
+                        <li>Check API server connection ({API.replace(/^https?:\/\//, '')})</li>
                         <li>Verify blockchain transactions completed successfully</li>
                         <li>Wait a few seconds for on-chain data to sync</li>
                       </ul>
@@ -2967,7 +3079,7 @@ export default function App() {
                     <div>
                       <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>API Server</div>
                       <div style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                        {window.location.hostname === "localhost" ? "localhost:3005" : "Production"}
+                        {API.replace(/^https?:\/\//, '')}
                       </div>
                     </div>
                     <div>
@@ -3105,7 +3217,7 @@ export default function App() {
               <div className="members-section">
                 <div className="members-header">
                   <span className="members-title">Members ({members.length})</span>
-                  {walletAddr.toLowerCase() === circle.owner?.toLowerCase() && (
+                  {walletAddr && (
                 <button
                       className="btn btn-secondary btn-sm"
                       onClick={() => setShowAddMember(true)}

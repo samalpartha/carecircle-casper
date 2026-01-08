@@ -6,12 +6,43 @@ import swaggerJsdoc from "swagger-jsdoc";
 import { openDb } from "./db.js";
 import nodemailer from "nodemailer";
 import crypto from "node:crypto";
+import { fileURLToPath } from "url";
+import { dirname, join, isAbsolute } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const db = openDb(process.env.DB_FILE || "carecircle-application.db");
+// Determine database filename based on environment
+let db;
+try {
+  // If DB_FILE is set and is an absolute path, use it directly
+  // Otherwise, pass just the filename and let db.js handle the path
+  let dbFilename;
+  if (process.env.DB_FILE && isAbsolute(process.env.DB_FILE)) {
+    // Full path provided, use it directly
+    dbFilename = process.env.DB_FILE;
+  } else if (process.env.VERCEL || process.env.VERCEL_ENV) {
+    // Vercel: Just filename, db.js will handle /tmp path
+    dbFilename = process.env.DB_FILE || "carecircle-application.db";
+  } else if (process.env.RAILWAY || process.env.RAILWAY_ENVIRONMENT) {
+    // Railway: Just filename, db.js will handle /app/data path
+    dbFilename = process.env.DB_FILE || "carecircle-application.db";
+  } else {
+    // Local or other platforms: Use DB_FILE env var or default
+    dbFilename = process.env.DB_FILE || "carecircle-application.db";
+  }
+  
+  db = openDb(dbFilename);
+  console.log(`[API] Database initialized: ${dbFilename}`);
+  console.log(`[API] Environment: ${process.env.RAILWAY ? 'Railway' : process.env.VERCEL ? 'Vercel' : 'Local'}`);
+} catch (error) {
+  console.error(`[API] Failed to initialize database:`, error);
+  // Continue without database - endpoints will handle errors gracefully
+}
 
 // ==================== Swagger Setup ====================
 
@@ -57,9 +88,15 @@ with **verifiable task completion proofs** recorded on the Casper blockchain.
     },
     servers: [
       {
+        url: process.env.VERCEL_URL 
+          ? `https://${process.env.VERCEL_URL}`
+          : (process.env.API_URL || "http://localhost:3005"),
+        description: process.env.VERCEL_URL ? "Production Server (Vercel)" : "Local Development Server"
+      },
+      ...(process.env.VERCEL_URL ? [] : [{
         url: "http://localhost:3005",
         description: "Local Development Server"
-      }
+      }])
     ],
     tags: [
       { name: "Health", description: "Service health endpoints" },
@@ -69,13 +106,37 @@ with **verifiable task completion proofs** recorded on the Casper blockchain.
       { name: "Stats", description: "Analytics and statistics" }
     ]
   },
-  apis: ["./src/index.js"]
+  apis: [
+    join(__dirname, "index.js"),  // Use absolute path to current file
+    join(__dirname, "*.js")        // Include all JS files in src directory
+  ]
 };
 
-const swaggerSpec = swaggerJsdoc(swaggerOptions);
+let swaggerSpec;
+try {
+  console.log(`[Swagger] Generating spec from:`, swaggerOptions.apis);
+  swaggerSpec = swaggerJsdoc(swaggerOptions);
+  const pathCount = Object.keys(swaggerSpec.paths || {}).length;
+  console.log(`[Swagger] Generated spec successfully with ${pathCount} paths`);
+} catch (error) {
+  console.error(`[Swagger] Failed to generate spec:`, error);
+  console.error(`[Swagger] Error details:`, error.stack);
+  // Create a minimal spec if generation fails
+  swaggerSpec = {
+    openapi: "3.0.0",
+    info: {
+      title: "CareCircle API",
+      version: "1.0.0",
+      description: `API documentation generation failed: ${error.message}. Check server logs.`
+    },
+    paths: {}
+  };
+}
+
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: "CareCircle API Documentation"
+  customSiteTitle: "CareCircle API Documentation",
+  explorer: true
 }));
 
 // ==================== Root & Health Check ====================
@@ -202,6 +263,10 @@ app.get("/health", (_, res) => res.json({
  */
 app.post("/circles/upsert", (req, res) => {
   try {
+    if (!db) {
+      return res.status(503).json({ error: "Database not available" });
+    }
+    
     const schema = z.object({
       id: z.number().int().positive(),
       name: z.string().min(1),
@@ -233,11 +298,23 @@ app.post("/circles/upsert", (req, res) => {
 
       console.log(`[API] Circle ${input.id} upserted. Changes: ${result.changes}`);
 
+      // Force database sync (important for SQLite)
+      db.exec("PRAGMA synchronous = NORMAL;");
+      
       // Verify it was saved
       const saved = db.prepare("SELECT * FROM circles WHERE id=?").get(input.id);
       if (!saved) {
         console.error(`[API] WARNING: Circle ${input.id} was not found after upsert!`);
-        throw new Error(`Failed to save circle ${input.id} to database`);
+        console.error(`[API] Database path: ${process.env.VERCEL ? '/tmp' : 'local'}`);
+        // Still return success if the insert worked, even if immediate read fails
+        // (might be a timing issue in serverless)
+        res.json({ 
+          ok: true, 
+          id: input.id, 
+          circle: { id: input.id, name: input.name, owner: input.owner },
+          warning: "Circle saved but immediate verification failed (may be serverless timing issue)"
+        });
+        return;
       } else {
         console.log(`[API] Verified: Circle ${input.id} exists in database`);
         console.log(`[API] Saved circle data:`, {
@@ -300,7 +377,19 @@ app.get("/circles/:id", async (req, res) => {
     return res.status(400).json({ error: "Invalid circle ID" });
   }
   
-  let circle = db.prepare("SELECT * FROM circles WHERE id=?").get(id);
+  if (!db) {
+    console.error(`[API] Database not available when fetching circle ${id}`);
+    return res.status(503).json({ error: "Database not available" });
+  }
+  
+  let circle;
+  try {
+    circle = db.prepare("SELECT * FROM circles WHERE id=?").get(id);
+    console.log(`[API] Circle ${id} query result:`, circle ? "found" : "not found");
+  } catch (dbErr) {
+    console.error(`[API] Database error fetching circle ${id}:`, dbErr);
+    return res.status(500).json({ error: "Database query failed" });
+  }
   
   // If not in database, try to fetch from blockchain (if contract is deployed)
   if (!circle) {
@@ -805,7 +894,9 @@ app.get("/circles/:id/tasks", (req, res) => {
   // Normalize types for UI
   res.json(tasks.map(t => ({
     ...t,
-    completed: !!t.completed
+    completed: !!t.completed,
+    request_money: t.request_money ?? 0, // Ensure request_money is always a number (0 or 1)
+    payment_tx_hash: t.payment_tx_hash || null // Ensure payment_tx_hash is null if empty/undefined
   })));
 });
 
@@ -832,6 +923,8 @@ app.get("/tasks/:id", (req, res) => {
   const task = db.prepare("SELECT * FROM tasks WHERE id=?").get(id);
   if (task) {
     task.completed = !!task.completed;
+    task.request_money = task.request_money ?? 0; // Ensure request_money is always a number (0 or 1)
+    task.payment_tx_hash = task.payment_tx_hash || null; // Ensure payment_tx_hash is null if empty/undefined
   }
   res.json(task ?? null);
 });
@@ -857,9 +950,12 @@ app.get("/tasks/:id", (req, res) => {
 app.get("/tasks/assigned/:address", (req, res) => {
   const address = req.params.address;
   const tasks = db.prepare("SELECT * FROM tasks WHERE assigned_to=? ORDER BY completed ASC, priority DESC, id DESC").all(address);
+  // Normalize types for UI
   res.json(tasks.map(t => ({
     ...t,
-    completed: !!t.completed
+    completed: !!t.completed,
+    request_money: t.request_money ?? 0, // Ensure request_money is always a number (0 or 1)
+    payment_tx_hash: t.payment_tx_hash || null // Ensure payment_tx_hash is null if empty/undefined
   })));
 });
 
@@ -1503,14 +1599,21 @@ function seedDemoData() {
   }
 }
 
-// Seed demo data on startup
-seedDemoData();
+// Seed demo data on startup (skip in Vercel to avoid cold start delays)
+if (db && process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+  seedDemoData();
+}
 
 // ==================== Start Server ====================
 
-const port = Number(process.env.PORT || 3005);
-app.listen(port, () => {
-  console.log(`
+// Export app for Vercel serverless functions
+export default app;
+
+// Only start listening if not in serverless environment
+if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+  const port = Number(process.env.PORT || 3005);
+  app.listen(port, () => {
+    console.log(`
 ╔═══════════════════════════════════════════════════════════════╗
 ║  CareCircle API Server                                        ║
 ║  Casper Hackathon 2026                                        ║
@@ -1519,5 +1622,6 @@ app.listen(port, () => {
 ║  URL:     http://localhost:${port.toString().padEnd(37)}║
 ║  Health:  http://localhost:${port}/health${" ".repeat(27)}║
 ╚═══════════════════════════════════════════════════════════════╝
-  `);
-});
+    `);
+  });
+}

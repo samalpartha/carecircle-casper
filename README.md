@@ -12,9 +12,9 @@ Built for **Casper Hackathon 2026** 🏆
 
 ## 🌐 Live Demo
 
-**🚀 Try it now:** [https://carecircle-web-fozkypxpga-uc.a.run.app](https://carecircle-web-fozkypxpga-uc.a.run.app)
+**🚀 Try it now:** [https://carecircle-casper.vercel.app/](https://carecircle-casper.vercel.app/)
 
-**📚 API Docs:** [https://carecircle-api-fozkypxpga-uc.a.run.app/docs](https://carecircle-api-fozkypxpga-uc.a.run.app/docs)
+**📚 API Docs:** [https://carecircle-casper-production.up.railway.app/docs/](https://carecircle-casper-production.up.railway.app/docs/)
 
 **Quick Start:**
 1. Visit the live demo URL

@@ -452,7 +452,49 @@ export async function transferCSPR({ recipientAddress, amountMotes, openWalletUI
   }
   
   // Calculate amount in CSPR for display
-  const amountCSPR = (parseInt(amountMotes) / 1_000_000_000).toFixed(2);
+  // Handle both string, number, and BigInt inputs safely
+  let amountCSPR;
+  try {
+    // Always convert to string first to handle BigInt safely
+    let amountStr;
+    if (typeof amountMotes === 'bigint') {
+      amountStr = amountMotes.toString();
+    } else {
+      amountStr = String(amountMotes);
+    }
+    
+    // Remove any non-numeric characters (keep only digits - no decimal point for BigInt)
+    const cleanAmount = amountStr.replace(/[^0-9]/g, '');
+    
+    if (!cleanAmount || cleanAmount === '0') {
+      throw new Error("Invalid payment amount: must be greater than 0");
+    }
+    
+    // Use BigInt for calculation to avoid precision issues and BigInt conversion errors
+    // NEVER use parseFloat or Number() on values that might be BigInt
+    const amountBigInt = BigInt(cleanAmount);
+    const csprBigInt = amountBigInt / BigInt(1_000_000_000);
+    const remainder = amountBigInt % BigInt(1_000_000_000);
+    const remainderStr = remainder.toString().padStart(9, '0');
+    amountCSPR = `${csprBigInt.toString()}.${remainderStr.slice(0, 2)}`;
+  } catch (err) {
+    // Fallback: try to convert to string and use BigInt
+    try {
+      const amountStr = typeof amountMotes === 'bigint' ? amountMotes.toString() : String(amountMotes);
+      const cleanAmount = amountStr.replace(/[^0-9]/g, '');
+      if (cleanAmount && cleanAmount !== '0') {
+        const amountBigInt = BigInt(cleanAmount);
+        const csprBigInt = amountBigInt / BigInt(1_000_000_000);
+        const remainder = amountBigInt % BigInt(1_000_000_000);
+        amountCSPR = `${csprBigInt.toString()}.${remainder.toString().padStart(9, '0').slice(0, 2)}`;
+      } else {
+        amountCSPR = "0.00";
+      }
+    } catch (fallbackErr) {
+      console.error("Error calculating CSPR amount:", fallbackErr);
+      amountCSPR = "0.00";
+    }
+  }
   
   console.log(`💰 Preparing transfer: ${amountCSPR} CSPR`);
   console.log(`   Sender: ${connectedPublicKey}`);
@@ -460,13 +502,18 @@ export async function transferCSPR({ recipientAddress, amountMotes, openWalletUI
   console.log(`   Has wallet extension: ${hasCasperWallet()}`);
   console.log(`   Connected public key obj: ${connectedPublicKeyObj ? "Yes" : "No"}`);
   
-  // Open Casper Wallet transfer interface if requested
+  // Open Casper Wallet transfer interface if requested (only once)
   if (openWalletUI && hasCasperWallet()) {
     try {
       // Open transfer page in new tab with details
+      // Use 'noopener,noreferrer' for security and to prevent multiple opens
       const transferUrl = `https://testnet.cspr.live/transfer`;
-      window.open(transferUrl, '_blank');
-      console.log(`📂 Opened transfer page: ${transferUrl}`);
+      const transferWindow = window.open(transferUrl, '_blank', 'noopener,noreferrer');
+      if (transferWindow) {
+        console.log(`📂 Opened transfer page: ${transferUrl}`);
+      } else {
+        console.warn("Could not open transfer page (popup may be blocked)");
+      }
     } catch (err) {
       console.warn("Could not open transfer page:", err);
     }
@@ -475,14 +522,63 @@ export async function transferCSPR({ recipientAddress, amountMotes, openWalletUI
   // Native CSPR transfers don't require a contract hash, only wallet connection
   if (hasCasperWallet() && connectedPublicKeyObj) {
     try {
-      // Ensure amount is a string (motes are stored as strings)
-      const transferAmountStr = String(amountMotes);
-      const transferAmount = BigInt(transferAmountStr);
+      // Ensure amount is converted to BigInt properly
+      // CRITICAL: Always convert to string first to avoid BigInt-to-number conversion errors
+      // NEVER use Number(), parseInt(), parseFloat(), or Math operations on BigInt values
+      let transferAmount;
+      let transferAmountStr;
+      
+      // Step 1: Convert to string (handles BigInt, number, string, etc.)
+      let amountStr;
+      if (typeof amountMotes === 'bigint') {
+        // BigInt: convert directly to string
+        amountStr = amountMotes.toString();
+      } else if (typeof amountMotes === 'number') {
+        // Number: convert to string using toLocaleString to handle large numbers
+        // This avoids precision loss and BigInt conversion issues
+        if (amountMotes > Number.MAX_SAFE_INTEGER) {
+          // For very large numbers, use toLocaleString with fullwide
+          amountStr = amountMotes.toLocaleString('fullwide', { useGrouping: false });
+        } else {
+          // For safe integers, use Math.floor and toString
+          // But we need to be careful - if amountMotes could be a BigInt in disguise, this will fail
+          // So we'll use a safer approach
+          amountStr = String(Math.floor(amountMotes));
+        }
+      } else {
+        // String or other: convert to string
+        amountStr = String(amountMotes);
+      }
+      
+      // Step 2: Clean the string (remove non-numeric characters)
+      const cleanAmount = amountStr.replace(/[^0-9]/g, '');
+      if (!cleanAmount || cleanAmount === '0') {
+        throw new Error("Invalid payment amount: must be greater than 0");
+      }
+      
+      // Step 3: Convert to BigInt (this is safe now since we have a clean string)
+      try {
+        transferAmount = BigInt(cleanAmount);
+        transferAmountStr = cleanAmount;
+      } catch (bigIntErr) {
+        console.error("Failed to convert to BigInt:", bigIntErr);
+        throw new Error(`Invalid payment amount format: ${amountMotes}. Error: ${bigIntErr.message}`);
+      }
       
       console.log(`💰 Transferring ${amountCSPR} CSPR to ${formatAddress(recipientAddress)}...`);
       console.log(`   Amount in motes: ${transferAmountStr}`);
+      console.log(`   Transfer amount type: ${typeof transferAmount}`);
       console.log(`   Sender: ${connectedPublicKey}`);
       console.log(`   Recipient: ${recipientAddress}`);
+      
+      // Ensure transferAmount is definitely a BigInt (not a number) to avoid conversion errors
+      // The SDK expects BigInt for large values, and JavaScript doesn't allow BigInt-to-number conversion
+      const finalTransferAmount = typeof transferAmount === 'bigint' 
+        ? transferAmount 
+        : BigInt(String(transferAmount).replace(/[^0-9]/g, ''));
+      
+      console.log(`   Final transfer amount (BigInt): ${finalTransferAmount.toString()}`);
+      console.log(`   Final transfer amount type: ${typeof finalTransferAmount}`);
       
       // Create a transfer deploy
       const recipientPublicKey = CLPublicKey.fromHex(recipientAddress);
@@ -495,7 +591,7 @@ export async function transferCSPR({ recipientAddress, amountMotes, openWalletUI
           1800000 // TTL: 30 minutes
         ),
         DeployUtil.ExecutableDeployItem.newTransfer(
-          transferAmount,
+          finalTransferAmount,
           recipientPublicKey,
           null, // transfer ID (optional)
           Uint8Array.from([]) // extra data (optional)
