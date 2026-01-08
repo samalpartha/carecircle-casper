@@ -19,10 +19,17 @@ export function openDb(filename = "carecircle-application.db") {
     
     console.log(`[DB] Opening database at: ${dbPath}`);
     const db = new Database(dbPath);
-  
-    // Enable WAL mode for better performance (skip in Vercel to avoid issues)
-    if (!process.env.VERCEL && !process.env.VERCEL_ENV) {
+    
+    // Configure SQLite for serverless environment
+    if (process.env.VERCEL || process.env.VERCEL_ENV) {
+      // In Vercel, use DELETE journal mode (more reliable for ephemeral storage)
+      db.exec(`PRAGMA journal_mode = DELETE;`);
+      db.exec(`PRAGMA synchronous = NORMAL;`);
+      console.log(`[DB] Configured for Vercel serverless environment`);
+    } else {
+      // Local development: use WAL mode for better performance
       db.exec(`PRAGMA journal_mode = WAL;`);
+      db.exec(`PRAGMA synchronous = NORMAL;`);
     }
   
   // Create tables
