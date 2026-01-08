@@ -1769,6 +1769,11 @@ export default function App() {
   };
 
   const handleMakePayment = async (task) => {
+    // Prevent multiple simultaneous payment attempts
+    if (busy) {
+      return addToast("Info", "Payment is already being processed. Please wait...", "info");
+    }
+    
     if (!walletAddr) return addToast("Error", "Connect wallet first", "error");
     if (!task.completed) {
       return addToast("Error", "Task must be completed before making payment", "error");
@@ -1827,19 +1832,14 @@ export default function App() {
         // Small delay to ensure wallet is ready
         await new Promise(resolve => setTimeout(resolve, 200));
         
-        // Open transfer page
-        const transferUrl = `https://testnet.cspr.live/transfer`;
-        window.open(transferUrl, '_blank');
-        console.log(`📂 Opened transfer page: ${transferUrl}`);
-        
         setLoadingMessage(`Opening Casper Wallet to sign transfer...`);
         
-        // Initiate transfer which will open Casper Wallet
+        // Initiate transfer (transferCSPR will open the transfer page if needed)
         console.log("🚀 Calling transferCSPR...");
         const paymentResult = await transferCSPR({
           recipientAddress: task.assigned_to,
           amountMotes: task.payment_amount,
-          openWalletUI: true
+          openWalletUI: true  // Let transferCSPR handle opening the URL once
         });
         
         console.log(`✅ Payment transferred to assignee: ${paymentResult.txHash}`);
@@ -1860,9 +1860,7 @@ export default function App() {
       console.error("❌ Payment transfer failed:", paymentErr);
       console.error("   Error details:", paymentErr.message, paymentErr.stack);
       addToast("Error", `Payment transfer failed: ${paymentErr.message}. Please try again.`, "error");
-      // Still open transfer page as fallback
-      const transferUrl = `https://testnet.cspr.live/transfer`;
-      window.open(transferUrl, '_blank');
+      // Don't open transfer page again - it was already opened by transferCSPR
     } finally {
       setBusy(false);
       setLoadingMessage("");
