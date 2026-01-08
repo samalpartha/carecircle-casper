@@ -452,7 +452,26 @@ export async function transferCSPR({ recipientAddress, amountMotes, openWalletUI
   }
   
   // Calculate amount in CSPR for display
-  const amountCSPR = (parseInt(amountMotes) / 1_000_000_000).toFixed(2);
+  // Handle both string and number inputs, and very large numbers
+  let amountCSPR;
+  try {
+    if (typeof amountMotes === 'bigint' || (typeof amountMotes === 'string' && amountMotes.length > 15)) {
+      // For BigInt or very large strings, use BigInt for calculation
+      const amountBigInt = typeof amountMotes === 'bigint' ? amountMotes : BigInt(amountMotes);
+      const csprBigInt = amountBigInt / BigInt(1_000_000_000);
+      const remainder = amountBigInt % BigInt(1_000_000_000);
+      amountCSPR = `${csprBigInt.toString()}.${remainder.toString().padStart(9, '0').slice(0, 2)}`;
+    } else {
+      // For smaller numbers, use regular division
+      const amountNum = typeof amountMotes === 'string' ? parseFloat(amountMotes) : Number(amountMotes);
+      amountCSPR = (amountNum / 1_000_000_000).toFixed(2);
+    }
+  } catch (err) {
+    // Fallback: try to convert to string and parse
+    const amountStr = String(amountMotes);
+    const amountNum = parseFloat(amountStr);
+    amountCSPR = (amountNum / 1_000_000_000).toFixed(2);
+  }
   
   console.log(`💰 Preparing transfer: ${amountCSPR} CSPR`);
   console.log(`   Sender: ${connectedPublicKey}`);
@@ -460,13 +479,18 @@ export async function transferCSPR({ recipientAddress, amountMotes, openWalletUI
   console.log(`   Has wallet extension: ${hasCasperWallet()}`);
   console.log(`   Connected public key obj: ${connectedPublicKeyObj ? "Yes" : "No"}`);
   
-  // Open Casper Wallet transfer interface if requested
+  // Open Casper Wallet transfer interface if requested (only once)
   if (openWalletUI && hasCasperWallet()) {
     try {
       // Open transfer page in new tab with details
+      // Use 'noopener,noreferrer' for security and to prevent multiple opens
       const transferUrl = `https://testnet.cspr.live/transfer`;
-      window.open(transferUrl, '_blank');
-      console.log(`📂 Opened transfer page: ${transferUrl}`);
+      const transferWindow = window.open(transferUrl, '_blank', 'noopener,noreferrer');
+      if (transferWindow) {
+        console.log(`📂 Opened transfer page: ${transferUrl}`);
+      } else {
+        console.warn("Could not open transfer page (popup may be blocked)");
+      }
     } catch (err) {
       console.warn("Could not open transfer page:", err);
     }
@@ -475,9 +499,30 @@ export async function transferCSPR({ recipientAddress, amountMotes, openWalletUI
   // Native CSPR transfers don't require a contract hash, only wallet connection
   if (hasCasperWallet() && connectedPublicKeyObj) {
     try {
-      // Ensure amount is a string (motes are stored as strings)
-      const transferAmountStr = String(amountMotes);
-      const transferAmount = BigInt(transferAmountStr);
+      // Ensure amount is converted to BigInt properly
+      // Handle string, number, or BigInt inputs
+      let transferAmount;
+      let transferAmountStr;
+      if (typeof amountMotes === 'bigint') {
+        transferAmount = amountMotes;
+        transferAmountStr = transferAmount.toString();
+      } else if (typeof amountMotes === 'string') {
+        // Remove any non-numeric characters and convert to BigInt
+        const cleanAmount = amountMotes.replace(/[^0-9]/g, '');
+        if (!cleanAmount || cleanAmount === '0') {
+          throw new Error("Invalid payment amount: must be greater than 0");
+        }
+        transferAmount = BigInt(cleanAmount);
+        transferAmountStr = cleanAmount;
+      } else {
+        // For numbers, convert to string first to avoid precision loss
+        const numAmount = Number(amountMotes);
+        if (isNaN(numAmount) || numAmount <= 0) {
+          throw new Error("Invalid payment amount: must be a positive number");
+        }
+        transferAmountStr = Math.floor(numAmount).toString();
+        transferAmount = BigInt(transferAmountStr);
+      }
       
       console.log(`💰 Transferring ${amountCSPR} CSPR to ${formatAddress(recipientAddress)}...`);
       console.log(`   Amount in motes: ${transferAmountStr}`);
