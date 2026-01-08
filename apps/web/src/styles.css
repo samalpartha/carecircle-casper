@@ -416,6 +416,45 @@ body::before {
   border: 1px solid var(--border-color);
 }
 
+.wallet-address-link {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--care-teal);
+  text-decoration: underline;
+  text-decoration-color: rgba(20, 184, 166, 0.4);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  background: transparent;
+  padding: 0;
+  border: none;
+}
+
+.wallet-address-link:hover {
+  color: var(--care-blue);
+  text-decoration-color: var(--care-blue);
+  text-decoration-thickness: 2px;
+}
+
+.wallet-address-link:active {
+  color: var(--brand);
+  text-decoration-color: var(--brand);
+}
+
+.wallet-link-icon {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.wallet-address-link:hover .wallet-link-icon {
+  opacity: 1;
+  transform: translate(2px, -2px);
+}
+
 /* ==================== Buttons ==================== */
 .btn {
   display: inline-flex;

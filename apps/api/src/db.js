@@ -86,7 +86,7 @@ export function openDb(filename = "carecircle-application.db") {
     if (assignedToCol && assignedToCol.notnull === 1) {
       console.log("⚠️ Migrating tasks table to allow NULL assigned_to...");
       
-      // Create new table with nullable assigned_to
+      // Create new table with nullable assigned_to and request_money
       db.exec(`
         CREATE TABLE IF NOT EXISTS tasks_new(
           id INTEGER PRIMARY KEY,
@@ -97,6 +97,7 @@ export function openDb(filename = "carecircle-application.db") {
           created_by TEXT NOT NULL,
           priority INTEGER NOT NULL DEFAULT 1,
           payment_amount TEXT,
+          request_money INTEGER NOT NULL DEFAULT 0,
           completed INTEGER NOT NULL DEFAULT 0,
           completed_by TEXT,
           completed_at INTEGER,
@@ -115,17 +116,17 @@ export function openDb(filename = "carecircle-application.db") {
           INSERT INTO tasks_new 
           SELECT id, circle_id, title, description, 
                  CASE WHEN assigned_to = '' THEN NULL ELSE assigned_to END,
-                 created_by, priority, payment_amount,
+                 created_by, priority, payment_amount, 0,
                  completed, completed_by, completed_at, tx_hash, created_at
           FROM tasks;
         `);
       } else {
         // Old table doesn't have payment_amount, so insert NULL for it
         db.exec(`
-          INSERT INTO tasks_new (id, circle_id, title, description, assigned_to, created_by, priority, payment_amount, completed, completed_by, completed_at, tx_hash, created_at)
+          INSERT INTO tasks_new (id, circle_id, title, description, assigned_to, created_by, priority, payment_amount, request_money, completed, completed_by, completed_at, tx_hash, created_at)
           SELECT id, circle_id, title, description, 
                  CASE WHEN assigned_to = '' THEN NULL ELSE assigned_to END,
-                 created_by, priority, NULL,
+                 created_by, priority, NULL, 0,
                  completed, completed_by, completed_at, tx_hash, created_at
           FROM tasks;
         `);
@@ -155,6 +156,42 @@ export function openDb(filename = "carecircle-application.db") {
     }
   } catch (err) {
     console.log("Migration check for payment_amount:", err.message);
+  }
+
+  // Migration: Add payment_tx_hash column if it doesn't exist
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(tasks)").all();
+    const hasPaymentTxHash = tableInfo.some(col => col.name === "payment_tx_hash");
+    if (!hasPaymentTxHash) {
+      db.exec("ALTER TABLE tasks ADD COLUMN payment_tx_hash TEXT");
+      console.log("✓ Added payment_tx_hash column to tasks table");
+    }
+  } catch (err) {
+    console.log("Migration check for payment_tx_hash:", err.message);
+  }
+
+  // Migration: Add rejected column if it doesn't exist
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(tasks)").all();
+    const hasRejected = tableInfo.some(col => col.name === "rejected");
+    if (!hasRejected) {
+      db.exec("ALTER TABLE tasks ADD COLUMN rejected INTEGER NOT NULL DEFAULT 0");
+      console.log("✓ Added rejected column to tasks table");
+    }
+  } catch (err) {
+    console.log("Migration check for rejected:", err.message);
+  }
+
+  // Migration: Add request_money column if it doesn't exist
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(tasks)").all();
+    const hasRequestMoney = tableInfo.some(col => col.name === "request_money");
+    if (!hasRequestMoney) {
+      db.exec("ALTER TABLE tasks ADD COLUMN request_money INTEGER NOT NULL DEFAULT 0");
+      console.log("✓ Added request_money column to tasks table");
+    }
+  } catch (err) {
+    console.log("Migration check for request_money:", err.message);
   }
   
   // Continue with other tables

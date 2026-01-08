@@ -56,9 +56,11 @@ Millions of people rely on informal caregiving networks - family members, neighb
 ### The Solution
 
 CareCircle uses the Casper blockchain to:
-- ✅ **Record verifiable proofs** of task completion, signed by the caregiver
+- ✅ **Record verifiable proofs** of request completion, signed by the caregiver
 - 👥 **Coordinate care circles** - groups of people sharing caregiving responsibilities
-- 📋 **Manage tasks** with priorities, assignments, and deadlines
+- 📋 **Manage requests** - create task requests or money requests with priorities, assignments, and deadlines
+- 💸 **Process payments** - automatic CSPR transfers on Casper blockchain with transaction tracking
+- ✓✗ **Accept/Reject money requests** - assignees can accept or reject payment requests
 - 🔗 **Create transparency** with on-chain activity that anyone can verify
 
 ---
@@ -69,11 +71,17 @@ CareCircle uses the Casper blockchain to:
 | Feature | Description |
 |---------|-------------|
 | **Care Circles** | Create groups of caregivers (family, friends, volunteers) |
-| **Task Management** | Assign tasks with priorities (urgent, high, medium, low) and optional payments |
-| **Wallet Signing** | Task completion requires wallet signature (proof of identity) |
+| **Request Management** | Create task requests or money requests with priorities (urgent, high, medium, low) |
+| **Task Requests** | Regular caregiving tasks with optional payment to assignee upon completion |
+| **Money Requests** | Request payment from assignees with Accept/Reject functionality |
+| **Payment Processing** | Automatic CSPR transfers on Casper blockchain with transaction tracking |
+| **Wallet Signing** | Request completion requires wallet signature (proof of identity) |
 | **On-Chain Proofs** | Every completion is recorded on Casper blockchain |
-| **Explorer Links** | View transactions on Casper Testnet Explorer |
+| **Explorer Links** | View transactions and main purse UREFs on Casper Testnet Explorer |
 | **Member Management** | Add/remove circle members with on-chain records |
+| **Payment Tracking** | Track payment status (pending, accepted, rejected, paid) |
+| **Live Balance** | Display real-time CSPR balance from Casper blockchain |
+| **Request Filtering** | Filter requests by type (Money Requests, Task Requests) and status |
 | **Event System** | Smart contract emits events for all activities |
 
 ### 🆕 Latest Enhancements (January 2026)
@@ -158,7 +166,7 @@ CareCircle uses the Casper blockchain to:
 │  │   (Signing & Transactions)    │    │    http://localhost:3005          │ │
 │  │                               │    │                                   │ │
 │  │  • Connect wallet             │    │  • /circles - Circle management   │ │
-│  │  • Sign deploys               │    │  • /tasks - Task management       │ │
+│  │  • Sign deploys               │    │  • /tasks - Request management    │ │
 │  │  • Submit transactions        │    │  • /members - Member management   │ │
 │  │                               │    │  • /stats - Analytics             │ │
 │  │                               │    │  • /docs - Swagger UI             │ │
@@ -179,10 +187,12 @@ CareCircle uses the Casper blockchain to:
 │  │   • add_member()              │  │  │  │  ├── circle_id, address    │   │
 │  │   • create_task()             │  │  │  │  └── is_owner, joined_at   │   │
 │  │   • complete_task() ← PROOF   │  │  │  │                            │   │
-│  │                               │  │  │  │  tasks                     │   │
+│  │                               │  │  │  │  tasks (requests)          │   │
 │  │   Events:                     │  │  │  │  ├── id, circle_id, title  │   │
 │  │   • CircleCreated             │  │  │  │  ├── assigned_to, priority │   │
-│  │   • MemberAdded               │  │  │  │  └── completed, tx_hash    │   │
+│  │   • MemberAdded               │  │  │  │  ├── request_money, payment_amount │   │
+│  │   • TaskCreated               │  │  │  │  ├── payment_tx_hash, rejected │   │
+│  │   • TaskCompleted             │  │  │  │  └── completed, tx_hash    │   │
 │  │   • TaskCreated               │  │  │  └────────────────────────────┘   │
 │  │   • TaskCompleted             │  │  │                                    │
 │  └───────────────────────────────┘  │  └────────────────────────────────────┘
@@ -346,17 +356,17 @@ CareCircle uses the Casper blockchain to:
                 └─────────────┘                             
 ```
 
-### Flow 3: Complete Task (Verifiable Proof)
+### Flow 3: Complete Task Request (Verifiable Proof)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│               COMPLETE TASK FLOW (CREATES PROOF!)                │
+│          COMPLETE TASK REQUEST FLOW (CREATES PROOF!)           │
 └─────────────────────────────────────────────────────────────────┘
 
   ┌─────────────┐                                          
   │ User clicks │                                          
-  │ "Complete"  │                                          
-  │ on task     │                                          
+  │ "Complete   │                                          
+  │  Task"      │                                          
   └──────┬──────┘                                          
          │                                                 
          ▼                                                 
@@ -396,16 +406,6 @@ CareCircle uses the Casper blockchain to:
   │  4. Emit TaskCompleted event                │          
   │  5. Return deploy hash                      │          
   │                                              │          
-  │  ┌─────────────────────────────────────┐    │          
-  │  │ TaskCompleted Event:                │    │          
-  │  │ {                                   │    │          
-  │  │   task_id: 123,                     │    │          
-  │  │   circle_id: 1,                     │    │          
-  │  │   completed_by: "0202b40d...",      │    │          
-  │  │   timestamp: 1704393600             │    │          
-  │  │ }                                   │    │          
-  │  └─────────────────────────────────────┘    │          
-  │                                              │          
   └──────────────────────┬──────────────────────┘          
                          │                                 
                          ▼                                 
@@ -420,6 +420,7 @@ CareCircle uses the Casper blockchain to:
   │                                              │          
   │  ✅ Task marked complete                     │          
   │  🔗 Transaction link: testnet.cspr.live/... │          
+  │  💸 Creator can make payment (if set)        │          
   │  📊 Stats updated                            │          
   │                                              │          
   └─────────────────────────────────────────────┘          
@@ -432,7 +433,84 @@ CareCircle uses the Casper blockchain to:
    ════════════════════════════════════════════════        
 ```
 
-### Flow 4: Data Synchronization
+### Flow 4: Money Request (Accept/Reject & Payment)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              MONEY REQUEST FLOW (ACCEPT/REJECT)                │
+└─────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────┐                                          
+  │ Creator     │                                          
+  │ creates     │                                          
+  │ money       │                                          
+  │ request     │                                          
+  └──────┬──────┘                                          
+         │                                                 
+         ▼                                                 
+  ┌─────────────┐                                          
+  │ Assignee    │                                          
+  │ sees request│                                          
+  │ with Accept │                                          
+  │ & Reject    │                                          
+  │ buttons     │                                          
+  └──────┬──────┘                                          
+         │                                                 
+         ├─────────────────┬─────────────────┐             
+         │                 │                 │             
+         ▼                 ▼                 ▼             
+  ┌──────────┐    ┌──────────┐    ┌──────────┐            
+  │  ACCEPT  │    │  REJECT  │    │  IGNORE  │            
+  └────┬─────┘    └────┬─────┘    └──────────┘            
+       │                │                                  
+       │                ▼                                  
+       │         ┌─────────────┐                           
+       │         │ Mark as    │                           
+       │         │ rejected   │                           
+       │         │ Status:     │                           
+       │         │ "Rejected"  │                           
+       │         └─────────────┘                           
+       │                                                    
+       ▼                                                    
+  ┌─────────────┐                                          
+  │ Transfer    │                                          
+  │ page opens  │                                          
+  │ automatically│                                          
+  └──────┬──────┘                                          
+         │                                                 
+         ▼                                                 
+  ┌─────────────┐                                          
+  │ Complete    │                                          
+  │ task on     │                                          
+  │ blockchain  │                                          
+  └──────┬──────┘                                          
+         │                                                 
+         ▼                                                 
+  ┌─────────────┐                                          
+  │ Transfer    │                                          
+  │ CSPR to     │                                          
+  │ creator     │                                          
+  └──────┬──────┘                                          
+         │                                                 
+         ▼                                                 
+  ┌─────────────┐                                          
+  │ Status:     │                                          
+  │ "Accepted - │                                          
+  │ payment     │                                          
+  │ pending"    │                                          
+  └──────┬──────┘                                          
+         │                                                 
+         ▼                                                 
+  ┌─────────────┐                                          
+  │ Payment     │                                          
+  │ confirmed   │                                          
+  │ Status:     │                                          
+  │ "Paid by    │                                          
+  │ assignee"    │                                          
+  └─────────────┘                                          
+```
+
+### Flow 5: Data Synchronization
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -620,8 +698,12 @@ http://localhost:3005/docs
 | `GET` | `/circles/:id/tasks` | Get circle tasks |
 | `GET` | `/circles/:id/stats` | Get circle statistics |
 | `POST` | `/members/upsert` | Add/update member |
-| `POST` | `/tasks/upsert` | Create/update task |
-| `GET` | `/tasks/:id` | Get task by ID |
+| `POST` | `/tasks/upsert` | Create/update request (supports task requests and money requests) |
+| `GET` | `/tasks/:id` | Get request by ID |
+| `GET` | `/accounts/:publicKey/balance` | Get account balance and main purse UREF |
+| `POST` | `/invitations/send` | Send member invitation by email |
+| `GET` | `/invitations/:token` | Get invitation details |
+| `POST` | `/invitations/:token/accept` | Accept invitation and join circle |
 | `GET` | `/stats` | Global statistics |
 
 ### Example: Create a Circle
@@ -781,16 +863,24 @@ export CASPER_SECRET_KEY=./keys/secret_key.pem
 
 ### Project Summary
 
-**CareCircle** solves a real-world problem: coordinating and verifying caregiving activities. By recording task completions on the Casper blockchain, we create:
+**CareCircle** solves a real-world problem: coordinating and verifying caregiving activities with integrated payment processing. By recording request completions and payments on the Casper blockchain, we create:
 
-1. **Verifiable Proofs** - Anyone can verify a caregiver completed a task
-2. **Accountability** - Clear records of who did what and when
-3. **Trust** - Families can trust that care is being provided
-4. **Documentation** - Useful for insurance, legal, or medical purposes
+1. **Verifiable Proofs** - Anyone can verify a caregiver completed a request
+2. **Payment Processing** - Automatic CSPR transfers for task completion and money requests
+3. **Accountability** - Clear records of who did what, when, and payment status
+4. **Trust** - Families can trust that care is being provided and payments are processed
+5. **Documentation** - Useful for insurance, legal, or medical purposes
+6. **Financial Coordination** - Request and process payments directly within the caregiving workflow
 
 ### Key Innovations
 
-- **Signed Task Completion** - The caregiver's wallet signature proves identity
+- **Signed Request Completion** - The caregiver's wallet signature proves identity
+- **Dual Request Types** - Task requests (payment to assignee) and money requests (payment from assignee)
+- **Accept/Reject Workflow** - Money requests can be accepted or rejected by assignees
+- **Automatic Payment Processing** - CSPR transfers are processed automatically on Casper blockchain
+- **Payment Tracking** - Real-time payment status (pending, accepted, rejected, paid) with transaction hashes
+- **Live Balance Display** - Real-time CSPR balance fetched from Casper blockchain
+- **Request Filtering** - Filter by type (Money Requests, Task Requests) and status
 - **Event-Driven Architecture** - All activities emit on-chain events
 - **Hybrid Architecture** - Fast local cache + blockchain source of truth
 - **User-Friendly UX** - Beautiful dark UI that anyone can use

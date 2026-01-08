@@ -704,6 +704,9 @@ app.post("/tasks/upsert", (req, res) => {
       created_by: z.string().min(1),
       priority: z.number().int().min(0).max(3).optional(),
       payment_amount: z.string().nullable().optional(),
+      request_money: z.number().int().min(0).max(1).optional(),
+      payment_tx_hash: z.string().nullable().optional(),
+      rejected: z.number().int().min(0).max(1).optional(),
       completed: z.boolean(),
       completed_by: z.string().nullable().optional(),
       completed_at: z.number().int().nullable().optional(),
@@ -712,8 +715,8 @@ app.post("/tasks/upsert", (req, res) => {
     const t = schema.parse(req.body);
 
     db.prepare(`
-      INSERT INTO tasks(id, circle_id, title, description, assigned_to, created_by, priority, payment_amount, completed, completed_by, completed_at, tx_hash, created_at)
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks(id, circle_id, title, description, assigned_to, created_by, priority, payment_amount, request_money, payment_tx_hash, rejected, completed, completed_by, completed_at, tx_hash, created_at)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title=excluded.title,
         description=excluded.description,
@@ -721,6 +724,9 @@ app.post("/tasks/upsert", (req, res) => {
         created_by=excluded.created_by,
         priority=excluded.priority,
         payment_amount=excluded.payment_amount,
+        request_money=excluded.request_money,
+        payment_tx_hash=COALESCE(excluded.payment_tx_hash, payment_tx_hash),
+        rejected=COALESCE(excluded.rejected, rejected),
         completed=excluded.completed,
         completed_by=excluded.completed_by,
         completed_at=excluded.completed_at,
@@ -734,6 +740,9 @@ app.post("/tasks/upsert", (req, res) => {
       t.created_by,
       t.priority ?? 1,
       t.payment_amount ?? null,
+      t.request_money ?? 0,
+      t.payment_tx_hash ?? null,
+      t.rejected ?? 0,
       t.completed ? 1 : 0, 
       t.completed_by ?? null, 
       t.completed_at ?? null, 
@@ -1020,7 +1029,8 @@ app.get("/accounts/:publicKey/balance", async (req, res) => {
                 balance: csprBalance,
                 isLive: true,
                 accountHash: data.data.account_hash,
-                publicKey: data.data.public_key
+                publicKey: data.data.public_key,
+                mainPurseUref: data.data.main_purse_uref || null
               });
             }
           }
