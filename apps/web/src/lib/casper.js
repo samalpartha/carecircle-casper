@@ -529,24 +529,25 @@ export async function transferCSPR({ recipientAddress, amountMotes, openWalletUI
       let transferAmountStr;
       
       // Step 1: Convert to string (handles BigInt, number, string, etc.)
+      // CRITICAL: Never use Math operations, Number(), parseInt(), or parseFloat() on values that might be BigInt
+      // Always convert to string first, then clean and convert to BigInt
+      // IMPORTANT: Check for BigInt FIRST before checking for number, to avoid any implicit conversions
       let amountStr;
+      
+      // Check if it's a BigInt first (this is critical to avoid conversion errors)
       if (typeof amountMotes === 'bigint') {
-        // BigInt: convert directly to string
+        // BigInt: convert directly to string (NEVER use Number() or Math operations)
         amountStr = amountMotes.toString();
+      } else if (typeof amountMotes === 'string') {
+        // String: use directly (might already be a string representation of a number)
+        amountStr = amountMotes;
       } else if (typeof amountMotes === 'number') {
-        // Number: convert to string using toLocaleString to handle large numbers
-        // This avoids precision loss and BigInt conversion issues
-        if (amountMotes > Number.MAX_SAFE_INTEGER) {
-          // For very large numbers, use toLocaleString with fullwide
-          amountStr = amountMotes.toLocaleString('fullwide', { useGrouping: false });
-        } else {
-          // For safe integers, use Math.floor and toString
-          // But we need to be careful - if amountMotes could be a BigInt in disguise, this will fail
-          // So we'll use a safer approach
-          amountStr = String(Math.floor(amountMotes));
-        }
+        // Number: convert to string safely
+        // For numbers, we can safely use String() conversion
+        // Avoid toLocaleString as it might have issues with very large numbers
+        amountStr = String(amountMotes);
       } else {
-        // String or other: convert to string
+        // Other types: convert to string (shouldn't happen, but handle gracefully)
         amountStr = String(amountMotes);
       }
       
