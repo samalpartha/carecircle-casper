@@ -67,6 +67,7 @@ CareCircle uses the Casper blockchain to:
 
 ## 🌟 Key Features
 
+### Core Functionality
 | Feature | Description |
 |---------|-------------|
 | **Care Circles** | Create groups of caregivers (family, friends, volunteers) |
@@ -82,9 +83,61 @@ CareCircle uses the Casper blockchain to:
 | **Live Balance** | Display real-time CSPR balance from Casper blockchain |
 | **Request Filtering** | Filter requests by type (Money Requests, Task Requests) and status |
 | **Event System** | Smart contract emits events for all activities |
-| **In-App Help** | Interactive help system with user guides and keyboard shortcuts |
-| **Swagger API Docs** | Full REST API documentation at `/docs` |
-| **Cloud Deployed** | Live on Google Cloud Run with auto-scaling |
+
+### 🆕 Latest Enhancements (January 2026)
+
+#### **Email Invitation System** 📧
+- Send email invitations to caregivers
+- Unique join tokens for secure onboarding
+- Nodemailer integration for reliable delivery
+- Track invitation status and expiry
+
+#### **Mobile-First Design** 📱
+- Fully responsive across all devices (desktop, tablet, mobile)
+- Touch-optimized UI (44px minimum tap targets)
+- Landscape mode support
+- Progressive Web App ready
+
+#### **Enhanced Security & Validation** 🔒
+- Comprehensive input validation for all forms
+- Casper public key format validation
+- XSS prevention with HTML sanitization
+- Email format validation (RFC 5322 compliant)
+- Circle/task name validation with character limits
+
+#### **Production-Ready Error Handling** ⚠️
+- React Error Boundary with beautiful fallback UI
+- Graceful error recovery options
+- Development mode error details
+- Error logging and tracking
+
+#### **Analytics & Monitoring** 📊
+- Event tracking system (page views, actions, errors)
+- Performance metrics monitoring
+- API call tracking with duration/status
+- Session-based analytics
+- Data anonymization for privacy
+
+#### **Testing Infrastructure** 🧪
+- Vitest test framework setup
+- 30+ validation test cases
+- Testing Library integration
+- Coverage reporting configured
+- Mock setup for browser APIs
+
+#### **Improved Wallet Connection** 🔗
+- 30-second timeout protection (prevents hanging)
+- Better error messages
+- Manual public key entry for demo mode
+- Connection state persistence
+- Live account verification
+
+#### **Developer Experience** 🛠️
+- Swagger API documentation at `/docs`
+- Interactive help system with keyboard shortcuts
+- In-app user guides
+- Demo database with sample data (Circle ID: 1)
+- Cloud deployed on Google Cloud Run with auto-scaling
 
 ---
 
@@ -772,15 +825,34 @@ export CASPER_SECRET_KEY=./keys/secret_key.pem
 
 ## 🛠️ Technology Stack
 
+### Core Technologies
 | Layer | Technology | Purpose |
 |-------|------------|---------|
 | **Blockchain** | Casper Testnet | Immutable transaction records |
 | **Smart Contract** | Rust + Odra | On-chain logic & events |
 | **Wallet** | Casper Wallet SDK | Transaction signing |
 | **Frontend** | React 18 + Vite | User interface |
-| **Backend** | Express.js | REST API |
-| **Database** | SQLite | Fast cache layer |
-| **API Docs** | Swagger UI | Interactive documentation |
+| **Backend** | Express.js + Node.js | REST API server |
+| **Database** | SQLite (Better-SQLite3) | Fast cache layer with demo data |
+| **API Docs** | Swagger UI + JSDoc | Interactive documentation |
+
+### New Additions (January 2026)
+| Category | Technology | Purpose |
+|----------|------------|---------|
+| **Email** | Nodemailer | Invitation system |
+| **Validation** | Zod + Custom Validators | Input validation & sanitization |
+| **Testing** | Vitest + Testing Library | Unit & integration tests |
+| **Error Handling** | React Error Boundary | Graceful error recovery |
+| **Analytics** | Custom Analytics System | Event tracking & monitoring |
+| **Styling** | CSS3 + Media Queries | Mobile-responsive design |
+| **Deployment** | Google Cloud Run + Docker | Containerized cloud hosting |
+
+### Development Tools
+- **Package Manager**: npm workspaces (monorepo)
+- **Build Tool**: Vite 5.x (fast HMR)
+- **Code Quality**: ESLint + Prettier
+- **Version Control**: Git + GitHub
+- **CI/CD**: Google Cloud Build
 
 ---
 

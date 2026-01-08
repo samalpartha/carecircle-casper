@@ -1,6 +1,22 @@
 node_modules
 dist
 *.log
-carecircle.db
 .DS_Store
 .env
+
+# Large media files (store in cloud/docs for hackathon submission)
+*.mp4
+*.mov
+*.avi
+*.pdf
+*.zip
+*.tar.gz
+
+# Large images (use optimized versions or external hosting)
+*.png
+*.jpg
+*.jpeg
+*.gif
+!apps/web/public/**/*.png
+!apps/web/public/**/*.jpg
+!apps/web/public/**/*.svg
